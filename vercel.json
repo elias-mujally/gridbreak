@@ -3,6 +3,11 @@
   "framework": "vite",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/online/:path*",
+      "destination": "https://gridbreak-online.eliasmujally.workers.dev/:path*"
+    }
+  ]
 }
-
