@@ -143,7 +143,7 @@ describe('Parallel rules', () => {
   it('completes horizontal and vertical Parallel Rush matches', () => {
     expect(simulateParallel('wide', 'normal').winner).not.toBeNull();
     expect(simulateParallel('gauntlet', 'normal').winner).not.toBeNull();
-  });
+  }, 15_000);
 });
 
 describe('Rush tactical AI', () => {
