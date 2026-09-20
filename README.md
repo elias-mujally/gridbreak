@@ -67,14 +67,14 @@ Game mode and map are independent.
 
 ## Shared maps
 
-| Map | Size | Classic/Rush walls | Compatible layouts | Convergence players | Convergence walls each |
-|---|---:|---:|---|---|---|
-| Sprint | 7×7 | 7 | Opposite | — | — |
-| Arena | 10×10 | 10 | Opposite | 2 | 5 |
-| Wide | 12×7 | 9 | Opposite, horizontal Parallel | — | — |
-| Gauntlet | 10×18 | 14 | Opposite, vertical Parallel | — | — |
-| Grand | 15×15 | 16 | Opposite | 2–4 | 10 / 7 / 5 |
-| Titan | 20×20 | 20 | Opposite | 2–4 | 14 / 9 / 7 |
+| Map | Classic/Rush size | Classic/Rush walls | Compatible layouts | Convergence size | Convergence players | Convergence walls each |
+|---|---:|---:|---|---:|---|---|
+| Sprint | 7×7 | 7 | Opposite | — | — | — |
+| Arena | 10×10 | 10 | Opposite | 11×11 | 2 | 5 |
+| Wide | 12×7 | 9 | Opposite, horizontal Parallel | — | — | — |
+| Gauntlet | 10×18 | 14 | Opposite, vertical Parallel | — | — | — |
+| Grand | 15×15 | 16 | Opposite | 15×15 | 2–4 | 10 / 7 / 5 |
+| Titan | 20×20 | 20 | Opposite | 21×21 | 2–4 | 14 / 9 / 7 |
 
 These are playtest defaults rather than final balance values.
 
@@ -106,14 +106,15 @@ Open-board starting routes are equal in both Parallel layouts.
 
 ### Convergence
 
-Convergence uses configuration-owned player counts, spawn points, a central GoalZone, and wall inventories.
+Convergence uses configuration-owned dimensions, player counts, spawn points, one central GoalCell, and wall inventories. Its mode-specific boards are Arena 11×11, Grand 15×15, and Titan 21×21; Classic and Rush retain their established map dimensions.
 
 - Two players start North and South.
 - Three players start North, East, and South. Their open-board route lengths are equal; leaving West unused creates an acknowledged tactical asymmetry for playtesting.
 - Four players start North, East, South, and West.
-- Odd boards use one center cell. Even boards use a symmetric 2×2 center region.
+- Every Convergence board must have odd width and height. Configuration construction rejects even dimensions.
+- The only winning destination is the cell at `floor(width / 2), floor(height / 2)`.
 - Every player is a `HUMAN_LOCAL` controller in V1.
-- A wall is accepted only when BFS still finds a route from every active pawn to the center.
+- A wall is accepted only when BFS still finds a route from every active pawn to that single center cell.
 
 The first collision pawn may be jumped when the cell behind it is open. When that cell is blocked by a wall, board edge, or another pawn, the mover receives open side-step destinations around the first pawn. Chained jumps over multiple pawns are intentionally excluded because they become ambiguous in clusters.
 

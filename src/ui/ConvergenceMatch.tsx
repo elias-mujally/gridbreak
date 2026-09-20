@@ -60,14 +60,14 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
   return <div className={`app-shell convergence-shell map-${game.mapId} ${game.winner ? 'match-ended' : ''}`}>
     <header className="topbar">
       <div className="brand" aria-label="GridBreak"><span className="brand-mark"><i /><i /><i /><i /></span><span>GRID<span className="brand-light">BREAK</span></span></div>
-      <div className="topbar-right"><span className="edition">CONVERGENCE / {map.name.toUpperCase()} / {players.length} PLAYERS</span><button className="restart-top mode-change" onClick={onMainMenu}>Main Menu</button><button className="restart-top" onClick={rematch}><span>↺</span> Rematch</button></div>
+      <div className="topbar-right"><span className="edition">CONVERGENCE / {map.name.toUpperCase()} {game.width}×{game.height} / {players.length} PLAYERS</span><button className="restart-top mode-change" onClick={onMainMenu}>Main Menu</button><button className="restart-top" onClick={rematch}><span>↺</span> Rematch</button></div>
     </header>
     <main className="main-layout convergence-layout">
       <aside className="intro-panel convergence-intro">
         <div className="eyebrow"><span className="signal-dot" /> LOCAL SHARED DEVICE</div>
         <h1>Meet at<br /><em>the center.</em></h1>
-        <p className="lede">Race from the perimeter. Shape every route. First token into the center wins.</p>
-        <div className="how-to"><span>01 / CONVERGENCE V1</span><p>Move or place one wall. Every barrier must leave every player a route to the central GoalZone.</p></div>
+        <p className="lede">Race from the perimeter. Shape every route. First token into the one true center cell wins.</p>
+        <div className="how-to"><span>01 / ONE GOAL CELL</span><p>Move or place one wall. Every barrier must leave every player a route to the exact center.</p></div>
         <div className="convergence-roster" aria-label="Players">
           {players.map(player => <div key={player.id} className={`roster-player identity-${player.id} ${player.id === activeId && !game.winner ? 'active' : ''}`} style={playerStyle(player.color)}>
             <b aria-hidden="true">{player.token}</b><span><strong>{player.label}</strong><small>{player.wallsRemaining} walls · {routeLength(player.position, player.goal, game.walls, game)} steps</small></span>
@@ -89,7 +89,7 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
                 {coords.map(point => {
                   const legal = mode === 'move' && moves.some(move => samePoint(move, point));
                   const goal = pointInGoal(point, active.goal, game);
-                  return <button key={`${point.row}-${point.col}`} className={`cell ${legal ? 'legal' : ''} ${goal ? 'convergence-goal' : ''}`} type="button" aria-label={`Cell ${labelPoint(point)}${goal ? ', central GoalZone' : ''}${legal ? ', legal move' : ''}`} disabled={!legal || !!game.winner} onClick={() => play({ type: 'move', to: point })}>{goal ? <span className="goal-core" aria-hidden="true">◆</span> : null}</button>;
+                  return <button key={`${point.row}-${point.col}`} className={`cell ${legal ? 'legal' : ''} ${goal ? 'convergence-goal' : ''}`} type="button" aria-label={`Cell ${labelPoint(point)}${goal ? ', the single winning GoalCell' : ''}${legal ? ', legal move' : ''}`} disabled={!legal || !!game.winner} onClick={() => play({ type: 'move', to: point })}>{goal ? <span className="goal-core" aria-hidden="true">◆</span> : null}</button>;
                 })}
               </div>
               {players.map(player => <div key={player.id} className={`piece convergence-piece identity-${player.id} ${player.id === activeId ? 'active-piece' : ''}`} style={{ ...piecePosition(player.position, boardWidth, boardHeight), ...playerStyle(player.color) }} aria-label={`${player.label}, token ${player.token}`}><span>{player.token}</span></div>)}
@@ -126,6 +126,6 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
         <button className="change-mode-bottom" onClick={onMainMenu}>Main Menu</button>
       </aside>
     </main>
-    <footer className="footer"><span>GRIDBREAK / {map.name.toUpperCase()} CONVERGENCE</span><span>{players.length} LOCAL PLAYERS · CENTER GOAL</span></footer>
+    <footer className="footer"><span>GRIDBREAK / {map.name.toUpperCase()} {game.width}×{game.height}</span><span>{players.length} LOCAL PLAYERS · ONE CENTER GOAL</span></footer>
   </div>;
 }

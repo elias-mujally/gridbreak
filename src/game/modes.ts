@@ -7,7 +7,7 @@ export type RaceLayout = 'opposite' | 'parallel' | 'convergence';
 export type LegacyRaceLayout = Exclude<RaceLayout, 'convergence'>;
 export type GoalEdge = 'top' | 'bottom' | 'left' | 'right';
 export type BoardDimensions = { width: number; height: number };
-export type GoalZone = { kind: 'edge'; edge: GoalEdge; cells?: never } | { kind: 'cells'; cells: Point[]; edge?: never };
+export type GoalZone = { kind: 'edge'; edge: GoalEdge; cell?: never } | { kind: 'cell'; cell: Point; edge?: never };
 export type SpawnZone = { kind: 'point'; point: Point; edge: GoalEdge };
 export type LayoutConfig = {
   id: LegacyRaceLayout;
@@ -23,7 +23,7 @@ export type ConvergenceSetup = {
   goal: GoalZone;
   wallsPerPlayer: number;
 };
-export type ConvergenceConfig = {
+export type ConvergenceConfig = BoardDimensions & {
   supportedPlayerCounts: ConvergencePlayerCount[];
   setups: Partial<Record<ConvergencePlayerCount, ConvergenceSetup>>;
 };
@@ -47,9 +47,10 @@ const pointSpawn = (row: number, col: number, edge: GoalEdge): SpawnZone => ({ k
 const edgeGoal = (edge: GoalEdge): GoalZone => ({ kind: 'edge', edge });
 
 export function centerGoalZone(width: number, height: number): GoalZone {
-  const rows = height % 2 ? [Math.floor(height / 2)] : [height / 2 - 1, height / 2];
-  const cols = width % 2 ? [Math.floor(width / 2)] : [width / 2 - 1, width / 2];
-  return { kind: 'cells', cells: rows.flatMap(row => cols.map(col => ({ row, col }))) };
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 3 || height < 3 || width % 2 === 0 || height % 2 === 0) {
+    throw new Error(`Convergence boards require odd dimensions of at least 3×3; received ${width}×${height}.`);
+  }
+  return { kind: 'cell', cell: { row: Math.floor(height / 2), col: Math.floor(width / 2) } };
 }
 
 function convergenceSpawns(width: number, height: number, count: ConvergencePlayerCount): Partial<Record<PlayerId, SpawnZone>> {
@@ -68,14 +69,16 @@ function convergenceSpawns(width: number, height: number, count: ConvergencePlay
 }
 
 function convergence(width: number, height: number, walls: Partial<Record<ConvergencePlayerCount, number>>): ConvergenceConfig {
+  const goal = centerGoalZone(width, height);
   const supportedPlayerCounts = (Object.keys(walls).map(Number) as ConvergencePlayerCount[]).sort();
   return {
+    width, height,
     supportedPlayerCounts,
     setups: Object.fromEntries(supportedPlayerCounts.map(playerCount => [playerCount, {
       playerCount,
       turnOrder: CONVERGENCE_IDS.slice(0, playerCount),
       spawns: convergenceSpawns(width, height, playerCount),
-      goal: centerGoalZone(width, height),
+      goal,
       wallsPerPlayer: walls[playerCount]!,
     }])) as ConvergenceConfig['setups'],
   };
@@ -120,11 +123,11 @@ function layouts(width: number, height: number, parallel?: 'horizontal' | 'verti
 
 export const MAP_CONFIGS: Record<MapId, MapConfig> = {
   sprint: { id: 'sprint', name: 'Sprint', width: 7, height: 7, startingWalls: 7, layouts: layouts(7, 7), defaultLayout: 'opposite', rewardRange: [2, 4], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 32, deadlinePly: 64, wallDrainEvery: 4, aiWallLimit: 72 },
-  arena: { id: 'arena', name: 'Arena', width: 10, height: 10, startingWalls: 10, layouts: layouts(10, 10), defaultLayout: 'opposite', convergence: convergence(10, 10, { 2: 5 }), rewardRange: [4, 6], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 50, deadlinePly: 96, wallDrainEvery: 5, aiWallLimit: 96 },
+  arena: { id: 'arena', name: 'Arena', width: 10, height: 10, startingWalls: 10, layouts: layouts(10, 10), defaultLayout: 'opposite', convergence: convergence(11, 11, { 2: 5 }), rewardRange: [4, 6], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 50, deadlinePly: 96, wallDrainEvery: 5, aiWallLimit: 96 },
   wide: { id: 'wide', name: 'Wide', width: 12, height: 7, startingWalls: 9, layouts: layouts(12, 7, 'horizontal'), defaultLayout: 'opposite', rewardRange: [4, 6], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 40, deadlinePly: 80, wallDrainEvery: 4, aiWallLimit: 96 },
   gauntlet: { id: 'gauntlet', name: 'Gauntlet', width: 10, height: 18, startingWalls: 14, layouts: layouts(10, 18, 'vertical'), defaultLayout: 'opposite', rewardRange: [6, 8], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 72, deadlinePly: 140, wallDrainEvery: 6, aiWallLimit: 120 },
   grand: { id: 'grand', name: 'Grand', width: 15, height: 15, startingWalls: 16, layouts: layouts(15, 15), defaultLayout: 'opposite', convergence: convergence(15, 15, { 2: 10, 3: 7, 4: 5 }), rewardRange: [8, 10], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 84, deadlinePly: 160, wallDrainEvery: 7, aiWallLimit: 140 },
-  titan: { id: 'titan', name: 'Titan', width: 20, height: 20, startingWalls: 20, layouts: layouts(20, 20), defaultLayout: 'opposite', convergence: convergence(20, 20, { 2: 14, 3: 9, 4: 7 }), rewardRange: [10, 14], rewardWeights: { energy: 65, boost: 35 }, suddenDeathPly: 120, deadlinePly: 220, wallDrainEvery: 8, aiWallLimit: 160 },
+  titan: { id: 'titan', name: 'Titan', width: 20, height: 20, startingWalls: 20, layouts: layouts(20, 20), defaultLayout: 'opposite', convergence: convergence(21, 21, { 2: 14, 3: 9, 4: 7 }), rewardRange: [10, 14], rewardWeights: { energy: 65, boost: 35 }, suddenDeathPly: 120, deadlinePly: 220, wallDrainEvery: 8, aiWallLimit: 160 },
 };
 
 export const MAP_IDS = Object.keys(MAP_CONFIGS) as MapId[];
@@ -148,12 +151,12 @@ export function compatibleLayouts(map: MapConfig): LegacyRaceLayout[] {
   return (Object.keys(map.layouts) as LegacyRaceLayout[]).filter(id => !!map.layouts[id]);
 }
 export function pointInGoal(point: Point, goal: GoalZone, dimensions: BoardDimensions): boolean {
-  if (goal.kind === 'cells') return goal.cells.some(cell => cell.row === point.row && cell.col === point.col);
+  if (goal.kind === 'cell') return goal.cell.row === point.row && goal.cell.col === point.col;
   if (goal.edge === 'top') return point.row === 0;
   if (goal.edge === 'bottom') return point.row === dimensions.height - 1;
   if (goal.edge === 'left') return point.col === 0;
   return point.col === dimensions.width - 1;
 }
 export function goalLabel(goal: GoalZone): string {
-  return goal.kind === 'cells' ? 'CENTER ZONE' : `${goal.edge.toUpperCase()} EDGE`;
+  return goal.kind === 'cell' ? 'CENTER CELL' : `${goal.edge.toUpperCase()} EDGE`;
 }

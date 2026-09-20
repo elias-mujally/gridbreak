@@ -25,9 +25,9 @@ export function viewForPlayer(state: GameState, viewer: Player): GameView {
   const pathWalls = walls.filter(wall => !wall.knownPhantom).map(({ knownPhantom: _unused, ...wall }) => wall);
   const result: GameView = {
     viewer, mode: state.mode, mapId: state.mapId, layout: state.layout, width: state.width, height: state.height,
-    players: activePlayerStates(state).map(player => ({ ...player, spawn: { ...player.spawn }, position: { ...player.position }, goal: player.goal.kind === 'cells' ? { kind: 'cells', cells: player.goal.cells.map(point => ({ ...point })) } : { ...player.goal } })),
+    players: activePlayerStates(state).map(player => ({ ...player, spawn: { ...player.spawn }, position: { ...player.position }, goal: player.goal.kind === 'cell' ? { kind: 'cell', cell: { ...player.goal.cell } } : { ...player.goal } })),
     turnOrder: [...(state.turnOrder ?? ['blue', 'red'])], currentTurnIndex: state.currentTurnIndex ?? (state.turn === 'red' ? 1 : 0),
-    goals: { blue: state.goals.blue.kind === 'cells' ? { kind: 'cells', cells: state.goals.blue.cells.map(point => ({ ...point })) } : { ...state.goals.blue }, red: state.goals.red.kind === 'cells' ? { kind: 'cells', cells: state.goals.red.cells.map(point => ({ ...point })) } : { ...state.goals.red } },
+    goals: { blue: state.goals.blue.kind === 'cell' ? { kind: 'cell', cell: { ...state.goals.blue.cell } } : { ...state.goals.blue }, red: state.goals.red.kind === 'cell' ? { kind: 'cell', cell: { ...state.goals.red.cell } } : { ...state.goals.red } },
     pawns: { blue: { ...state.pawns.blue }, red: { ...state.pawns.red } }, walls, pathWalls,
     remaining: { ...state.remaining }, turn: state.turn, winner: state.winner, ply: state.ply,
   };

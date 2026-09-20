@@ -61,7 +61,7 @@ export function freshSeed(): number {
 }
 
 export function cloneGoal(goal: GoalZone): GoalZone {
-  return goal.kind === 'cells' ? { kind: 'cells', cells: goal.cells.map(point => ({ ...point })) } : { ...goal };
+  return goal.kind === 'cell' ? { kind: 'cell', cell: { ...goal.cell } } : { ...goal };
 }
 
 function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone, wallsRemaining: number, controller: ControllerType, rush?: RushState): PlayerState {
@@ -89,7 +89,7 @@ export function newGame(options: NewGameOptions = {}): GameState {
       return playerState(id, index + 1, spawn.point, setup.goal, setup.wallsPerPlayer, 'HUMAN_LOCAL');
     });
     return {
-      mode, mapId: map.id, layout: 'convergence', width: map.width, height: map.height,
+      mode, mapId: map.id, layout: 'convergence', width: map.convergence!.width, height: map.convergence!.height,
       players, turnOrder: [...setup.turnOrder], currentTurnIndex: 0,
       goals: { blue: cloneGoal(setup.goal), red: cloneGoal(setup.goal) },
       pawns: { blue: { ...players[0].position }, red: { ...players[1].position } },
