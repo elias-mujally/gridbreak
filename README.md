@@ -1,18 +1,22 @@
 # GridBreak
 
-GridBreak is an original local path-racing strategy game prototype built with Vite, React, and TypeScript. It supports Classic and Rush against local AI plus the experimental Convergence mode for two to four people sharing one device.
+GridBreak is an original path-racing strategy game built with Vite, React, and TypeScript. It supports Classic and Rush against local AI, local Convergence for two to four people sharing one device, and private authoritative online Convergence rooms.
 
 ## Run locally
 
 ```bash
 npm install
+npm run worker:dev
 npm run dev
 ```
+
+The Worker listens on `http://127.0.0.1:8787`, which is also the frontend's development fallback. Copy `.env.example` to `.env.local` only when a different Worker endpoint is needed.
 
 Validation:
 
 ```bash
 npm test
+npm run worker:typecheck
 npm run build
 ```
 
@@ -50,7 +54,30 @@ vercel link
 vercel --prod
 ```
 
-No environment variables, backend services, or runtime secrets are required.
+Set the Vercel production environment variable `VITE_ONLINE_SERVER_URL` to the deployed Worker's public HTTPS origin. This is a public endpoint, not a secret. No Cloudflare credentials or session secrets belong in the Vite environment or client bundle.
+
+## Online server
+
+Online V1 uses one Cloudflare Durable Object per private room. The Worker owns room admission and WebSocket transport; the Durable Object owns the lobby, authoritative game state, sequence, reconnect metadata, action history, and expiry alarm. Rendering and browser APIs remain outside the shared deterministic engine.
+
+```bash
+npm run worker:typecheck
+npm run worker:dev
+npm run worker:deploy
+```
+
+`wrangler.jsonc` declares the `ROOMS` Durable Object binding and its SQLite-backed migration. The production allowlist is configured through `ALLOWED_ORIGINS`; update it before deploying a frontend on a new origin.
+
+### Room and session lifecycle
+
+- Rooms are unlisted and use a case-insensitive `GB-XXXX` code that excludes ambiguous characters.
+- A guest receives a random session ID and 256-bit session token. The browser stores that temporary reconnect credential locally; Durable Object storage keeps only its SHA-256 hash.
+- Lobby actions and game intents use protocol version 1, a build compatibility value, unique action IDs, and the expected authoritative sequence.
+- The server accepts only `MOVE` and `PLACE_WALL` game intents and validates identity, turn ownership, collision, walls, route preservation, and victory with the shared engine.
+- A disconnected seat is retained for five minutes and turns are never skipped. A playing room with no connected players becomes abandoned after 30 minutes. Any room expires after 24 hours without activity.
+- Rematches require every connected room member to vote. Membership, map, and player count are retained while a clean authoritative game is created.
+
+Room metadata reserves `PUBLIC` and `PASSWORD_PROTECTED` visibility values, while Online V1 creates only `UNLISTED` rooms. Future accounts can replace the guest identity provider without changing `PlayerState` or the game rules.
 
 ## Setup model
 

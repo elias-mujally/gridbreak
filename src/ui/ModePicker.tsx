@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Difficulty, GameMode, NewGameOptions } from '../game/state';
 import { CONVERGENCE_MAP_IDS, MAP_CONFIGS, MAP_IDS, ConvergencePlayerCount, MapId, RaceLayout, compatibleLayouts } from '../game/modes';
 
-export default function ModePicker({ onStart }: { onStart: (options: NewGameOptions, difficulty: Difficulty) => void }) {
+export default function ModePicker({ onStart, onOnline }: { onStart: (options: NewGameOptions, difficulty: Difficulty) => void; onOnline: () => void }) {
   const [mode, setMode] = useState<GameMode>('classic');
   const [mapId, setMapId] = useState<MapId>('sprint');
   const [layout, setLayout] = useState<RaceLayout>('opposite');
@@ -60,6 +60,7 @@ export default function ModePicker({ onStart }: { onStart: (options: NewGameOpti
           <strong>Race to center.</strong><span>Two to four local players share one board and one device.</span><small>EXPERIMENTAL · LOCAL</small>
         </button>
       </div>
+      <button className="online-launch" onClick={onOnline}><span><small>04 / ONLINE V1</small><strong>PRIVATE CONVERGENCE ROOMS</strong><em>2–4 guests · authoritative server · reconnect</em></span><b>ONLINE ↗</b></button>
       <section className="map-picker" aria-label="Map selection">
         <div className="map-picker-heading"><strong>SELECT MAP</strong><span>{mode === 'convergence' ? 'Large boards configured for the center race.' : 'Shared by Classic and Rush.'}</span></div>
         <div className="map-options">{mapIds.map(id => { const option = MAP_CONFIGS[id]; const dimensions = mode === 'convergence' ? option.convergence! : option; return <button key={id} className={mapId === id ? 'chosen' : ''} onClick={() => selectMap(id)} aria-pressed={mapId === id}><strong>{option.name}</strong><span>{dimensions.width}×{dimensions.height}</span></button>; })}</div>

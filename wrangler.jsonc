@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gridbreak-online",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "RoomDurableObject" }
+    ]
+  },
+  "exports": {
+    "RoomDurableObject": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://gridbreak-nu.vercel.app,http://localhost:4173,http://127.0.0.1:4173,http://127.0.0.1:4175"
+  },
+  "observability": { "enabled": true }
+}

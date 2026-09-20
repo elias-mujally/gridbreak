@@ -9,6 +9,7 @@ import { canPlaceViewedWall, perceivedMovementBoard, probeTargets, viewForPlayer
 import { MAP_CONFIGS, RULE_SETS, ConvergencePlayerCount, RaceLayout, goalLabel, pointInGoal } from '../game/modes';
 import ModePicker from './ModePicker';
 import ConvergenceMatch from './ConvergenceMatch';
+import OnlineApp from './OnlineApp';
 
 type Mode = 'move' | 'horizontal' | 'vertical' | 'phantom-horizontal' | 'phantom-vertical' | 'assist' | 'break';
 type Flash = { id: number; kind: 'break' | 'reveal' | 'tile'; text: string; wall?: Wall };
@@ -94,6 +95,7 @@ export default function App() {
   const [flash, setFlash] = useState<Flash | null>(null);
   const [boardZoom, setBoardZoom] = useState(false);
   const [aiExplanation, setAIExplanation] = useState('');
+  const [online, setOnline] = useState(false);
   const debugAI = useMemo(() => new URLSearchParams(window.location.search).get('aiDebug') === '1', []);
   const view = useMemo(() => viewForPlayer(game, 'blue'), [game]);
   const board = useMemo(() => perceivedMovementBoard(view), [view]);
@@ -168,7 +170,8 @@ export default function App() {
   }
   function selectWall(orientation: Wall['orientation']) { setMode(isPhantomMode(mode) ? `phantom-${orientation}` : orientation); setHover(null); }
   function selectPhantom() { setMode(isPhantomMode(mode) ? wallOrientation(mode) : `phantom-${wallOrientation(mode)}`); setHover(null); }
-  if (!started) return <ModePicker onStart={startMatch} />;
+  if (online) return <OnlineApp onExit={() => setOnline(false)} />;
+  if (!started) return <ModePicker onStart={startMatch} onOnline={() => setOnline(true)} />;
   if (game.mode === 'convergence') return <ConvergenceMatch game={game} onAction={action => { const next = applyAction(game, action); if (!next) return false; setGame(next); return true; }} onRematch={rematch} onMainMenu={() => setStarted(false)} />;
 
   const goalMarks = Array.from({ length: Math.min(game.width, 12) });
