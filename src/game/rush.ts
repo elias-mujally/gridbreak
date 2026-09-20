@@ -1,4 +1,4 @@
-import { Action, GameState, Player, Point, RushState, Wall, inBounds, otherPlayer, samePoint } from './state';
+import { Action, GameState, Player, Point, RushState, Wall, activePlayerStates, inBounds, otherPlayer, samePoint } from './state';
 import { MAP_CONFIGS, RULE_SETS, pointInGoal } from './modes';
 import { legalAssistPaths, legalMoves } from './movement';
 import { routeLength } from './pathfinding';
@@ -39,13 +39,14 @@ function finishTurn(state: GameState, rush: RushState, pawns: GameState['pawns']
     rush.winnerReason = 'deadline';
     rush.event = { kind: 'pressure', text: 'Time. Closest route wins; Energy breaks a tie.' };
   }
-  return { ...state, pawns, walls, remaining, rush, winner, turn: winner ? state.turn : otherPlayer(state.turn), ply };
+  const next = { ...state, pawns, walls, remaining, rush, winner, turn: winner ? state.turn : otherPlayer(state.turn as Player), currentTurnIndex: winner ? state.currentTurnIndex ?? 0 : state.turn === 'blue' ? 1 : 0, ply };
+  return { ...next, players: activePlayerStates(next) };
 }
 
 export function applyRushAction(state: GameState, action: Action): GameState | null {
   if (state.mode !== 'rush' || !state.rush || state.winner) return null;
   const dimensions = { width: state.width, height: state.height };
-  const player = state.turn;
+  const player = state.turn as Player;
   const enemy = otherPlayer(player);
   const start = state.pawns[player];
   const rush: RushState = {
@@ -135,4 +136,3 @@ export function applyRushAction(state: GameState, action: Action): GameState | n
   if (entered.length && pointInGoal(pawns[player], state.goals[player], dimensions)) { winner = player; rush.winnerReason = 'goal'; }
   return finishTurn(state, rush, pawns, walls, remaining, winner);
 }
-

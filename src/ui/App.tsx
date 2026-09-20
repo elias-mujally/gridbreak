@@ -6,8 +6,9 @@ import { routeLength } from '../game/pathfinding';
 import { Action, Difficulty, GameState, NewGameOptions, Player, Point, Wall, newGame, rematchGame, samePoint } from '../game/state';
 import { wallKey } from '../game/walls';
 import { canPlaceViewedWall, perceivedMovementBoard, probeTargets, viewForPlayer } from '../game/view';
-import { MAP_CONFIGS, RULE_SETS, RaceLayout, goalLabel, pointInGoal } from '../game/modes';
+import { MAP_CONFIGS, RULE_SETS, ConvergencePlayerCount, RaceLayout, goalLabel, pointInGoal } from '../game/modes';
 import ModePicker from './ModePicker';
+import ConvergenceMatch from './ConvergenceMatch';
 
 type Mode = 'move' | 'horizontal' | 'vertical' | 'phantom-horizontal' | 'phantom-vertical' | 'assist' | 'break';
 type Flash = { id: number; kind: 'break' | 'reveal' | 'tile'; text: string; wall?: Wall };
@@ -21,12 +22,14 @@ function launchState(): { started: boolean; game: GameState; difficulty: Difficu
   const mapId = params.get('map');
   const difficulty = (['easy', 'normal', 'hard'] as const).includes(params.get('difficulty') as Difficulty) ? params.get('difficulty') as Difficulty : 'normal';
   if (!mapId || !(mapId in MAP_CONFIGS)) return { started: false, game: newGame(), difficulty };
-  const mode = params.get('mode') === 'classic' ? 'classic' : 'rush';
+  const mode = params.get('mode') === 'classic' ? 'classic' : params.get('mode') === 'convergence' ? 'convergence' : 'rush';
   const requestedLayout = params.get('layout') as RaceLayout | null;
-  const layout = requestedLayout && MAP_CONFIGS[mapId as keyof typeof MAP_CONFIGS].layouts[requestedLayout] ? requestedLayout : MAP_CONFIGS[mapId as keyof typeof MAP_CONFIGS].defaultLayout;
+  const layout = mode === 'convergence' ? 'convergence' : requestedLayout && MAP_CONFIGS[mapId as keyof typeof MAP_CONFIGS].layouts[requestedLayout] ? requestedLayout : MAP_CONFIGS[mapId as keyof typeof MAP_CONFIGS].defaultLayout;
+  const requestedPlayers = Number(params.get('players')) as ConvergencePlayerCount;
+  const playerCount = ([2, 3, 4] as const).includes(requestedPlayers) ? requestedPlayers : 4;
   const seedText = params.get('seed');
   const seed = seedText !== null && Number.isInteger(Number(seedText)) ? Number(seedText) >>> 0 : undefined;
-  const game = newGame({ mode, mapId: mapId as keyof typeof MAP_CONFIGS, layout, ...(mode === 'rush' && seed !== undefined ? { seed, seedLocked: true } : {}) });
+  const game = newGame({ mode, mapId: mapId as keyof typeof MAP_CONFIGS, layout, ...(mode === 'convergence' ? { playerCount } : {}), ...(mode === 'rush' && seed !== undefined ? { seed, seedLocked: true } : {}) });
   if (import.meta.env.DEV && params.get('result') === 'victory' && mode === 'rush') {
     const edge = game.goals.blue.edge;
     game.pawns.blue = edge === 'top' ? { row: 0, col: Math.floor(game.width / 2) }
@@ -124,7 +127,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!started || game.turn !== 'red' || game.winner) return;
+    if (!started || game.mode === 'convergence' || game.turn !== 'red' || game.winner) return;
     setThinking(true);
     const timer = window.setTimeout(() => {
       const decision = chooseAIActionWithDebug(game, difficulty);
@@ -166,6 +169,7 @@ export default function App() {
   function selectWall(orientation: Wall['orientation']) { setMode(isPhantomMode(mode) ? `phantom-${orientation}` : orientation); setHover(null); }
   function selectPhantom() { setMode(isPhantomMode(mode) ? wallOrientation(mode) : `phantom-${wallOrientation(mode)}`); setHover(null); }
   if (!started) return <ModePicker onStart={startMatch} />;
+  if (game.mode === 'convergence') return <ConvergenceMatch game={game} onAction={action => { const next = applyAction(game, action); if (!next) return false; setGame(next); return true; }} onRematch={rematch} onMainMenu={() => setStarted(false)} />;
 
   const goalMarks = Array.from({ length: Math.min(game.width, 12) });
   return <div className={`app-shell ${rushMode ? 'rush-shell' : ''} map-${game.mapId} layout-${game.layout} ${game.winner ? 'match-ended' : ''}`}>
@@ -200,9 +204,9 @@ export default function App() {
             {placementMode && canAct && anchors.map(anchor => { const wall: Wall = { ...anchor, orientation: wallOrientation(mode) }; const legal = canPlaceViewedWall(view, wall, isPhantomMode(mode)); const x = anchor.col * 100 + 94; const y = anchor.row * 100 + 94; return <g key={`${anchor.row}-${anchor.col}`} className={`anchor ${legal ? 'available' : 'unavailable'}`} role="button" tabIndex={0} onPointerEnter={() => setHover(wall)} onPointerLeave={() => setHover(null)} onClick={() => play(isPhantomMode(mode) ? { type: 'phantom', wall } : { type: 'wall', wall })} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') play(isPhantomMode(mode) ? { type: 'phantom', wall } : { type: 'wall', wall }); }}><rect className="anchor-hit" x={x - 35} y={y - 35} width="70" height="70" /><circle cx={x} cy={y} r={legal ? 6 : 3} /></g>; })}
           </svg>
           {flash && <div key={flash.id} className={`signature-toast ${flash.kind}`} role="status"><strong>{flash.kind === 'break' ? 'WALL SHATTERED' : flash.kind === 'reveal' ? 'PHANTOM EXPOSED' : 'REWARD COLLECTED'}</strong><span>{flash.text}</span></div>}
-          {game.winner && <div className={`match-result ${game.winner === 'blue' ? 'victory' : game.winner === 'red' ? 'defeat' : 'draw'}`} role="dialog" aria-modal="true" aria-label="Match result"><div className="result-particles" aria-hidden="true">{Array.from({ length: 14 }, (_, i) => <i key={i} />)}</div><small>MATCH COMPLETE</small><strong>{game.winner === 'blue' ? 'VICTORY' : game.winner === 'red' ? 'DEFEAT' : 'DRAW'}</strong><span>{game.winner === 'blue' ? 'Route secured.' : game.winner === 'red' ? 'The rival broke through.' : 'Routes held in balance.'}</span><button onClick={rematch}>↺ REMATCH</button></div>}
+          {game.winner && <div className={`match-result ${game.winner === 'blue' ? 'victory' : game.winner === 'red' ? 'defeat' : 'draw'}`} role="dialog" aria-modal="true" aria-label="Match result"><div className="result-particles" aria-hidden="true">{Array.from({ length: 14 }, (_, i) => <i key={i} />)}</div><small>MATCH COMPLETE</small><strong>{game.winner === 'blue' ? 'VICTORY' : game.winner === 'red' ? 'DEFEAT' : 'DRAW'}</strong><span>{game.winner === 'blue' ? 'Route secured.' : game.winner === 'red' ? 'The rival broke through.' : 'Routes held in balance.'}</span><div className="result-actions"><button onClick={rematch}>↺ REMATCH</button><button className="result-menu" onClick={() => setStarted(false)}>MAIN MENU</button></div></div>}
         </div></div></div>
-        <div className="arena-bottom"><div className="player-tag blue"><span className="player-orb" /><span className="player-copy"><small>YOU · REACH {game.goals.blue.edge.toUpperCase()}</small><strong>BLUE</strong>{rushMode && <EnergyMeter player="blue" energy={energy} assists={assistCount} />}</span></div><div className="objective"><span>RED → {goalLabel(game.goals.red)}</span><div className="objective-line">{goalMarks.map((_, i) => <i key={i} />)}</div></div><div className="wall-chip blue"><strong>{game.remaining.blue.toString().padStart(2, '0')}</strong><span>WALLS</span></div></div>
+        <div className="arena-bottom"><div className="player-tag blue"><span className="player-orb" /><span className="player-copy"><small>YOU · REACH {goalLabel(game.goals.blue)}</small><strong>BLUE</strong>{rushMode && <EnergyMeter player="blue" energy={energy} assists={assistCount} />}</span></div><div className="objective"><span>RED → {goalLabel(game.goals.red)}</span><div className="objective-line">{goalMarks.map((_, i) => <i key={i} />)}</div></div><div className="wall-chip blue"><strong>{game.remaining.blue.toString().padStart(2, '0')}</strong><span>WALLS</span></div></div>
       </section>
       <aside className="control-panel"><div className="panel-heading"><span className="panel-index">02 / CONTROL ROOM</span><span className="live-pip">LIVE MATCH</span></div><div className="turn-card"><div className="turn-card-top"><span>{rushMode ? `${map?.name.toUpperCase()} / CURRENT TURN` : 'CURRENT TURN'}</span><span className="turn-symbol">{game.winner ? '◆' : '●'}</span></div><strong>{game.winner ? game.winner === 'draw' ? 'Draw' : game.winner === 'blue' ? 'Victory' : 'Defeat' : thinking || game.turn === 'red' ? 'Rival thinking' : 'Your move'}</strong><p>{notice}</p></div>
         {rushMode && <><div className={`rush-status ${view.rush?.suddenDeath ? 'sudden' : ''}`}>{view.rush?.suddenDeath ? <><strong>⚡ SUDDEN DEATH</strong><span>{Math.max(0, map.deadlinePly - game.ply)} turns remain · wall reserves fade</span></> : <><strong>MOMENTUM <span>{view.rush?.momentum.blue}/3</span></strong><span>Progress charges Energy · chain 3 for +1 bonus</span></>}</div><div className="rush-meta"><span>{map.name.toUpperCase()} · {game.layout.toUpperCase()}</span><span>SEED <strong>{view.rush?.seed}</strong>{view.rush?.seedLocked ? ' 🔒' : ''}</span><span>TURN {game.ply}/{map.deadlinePly}</span></div></>}

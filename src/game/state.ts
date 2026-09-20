@@ -1,12 +1,15 @@
-import { MAP_CONFIGS, RULE_SETS, layoutConfig, type GoalZone, type MapId, type RaceLayout } from './modes';
+import { MAP_CONFIGS, RULE_SETS, convergenceSetup, layoutConfig, type ConvergencePlayerCount, type GoalZone, type MapId, type RaceLayout } from './modes';
 import { generateTiles } from './tiles';
 
 export type Player = 'blue' | 'red';
+export type PlayerId = Player | 'amber' | 'violet';
 export const PLAYERS: readonly Player[] = ['blue', 'red'];
-export type GameMode = 'classic' | 'rush';
+export const PLAYER_IDS: readonly PlayerId[] = ['blue', 'red', 'amber', 'violet'];
+export type ControllerType = 'HUMAN_LOCAL' | 'AI' | 'HUMAN_REMOTE';
+export type GameMode = 'classic' | 'rush' | 'convergence';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export type Point = { row: number; col: number };
-export type Wall = { row: number; col: number; orientation: 'horizontal' | 'vertical'; owner?: Player };
+export type Wall = { row: number; col: number; orientation: 'horizontal' | 'vertical'; owner?: PlayerId };
 export type PhantomWall = Wall & { owner: Player };
 export type PowerTile = { kind: 'energy' | 'boost'; point: Point; consumed: boolean };
 export type RushEvent = { kind: 'move' | 'assist' | 'wall' | 'phantom' | 'reveal' | 'break' | 'probe' | 'tile' | 'pressure'; text: string; wall?: Wall; privateTo?: Player };
@@ -16,14 +19,38 @@ export type RushState = {
   phantomAvailable: Record<Player, boolean>; phantoms: PhantomWall[]; tiles: PowerTile[];
   suddenDeath: boolean; pressureStage: number; event: RushEvent | null; winnerReason: 'goal' | 'deadline' | null;
 };
+export type PlayerState = {
+  id: PlayerId;
+  number: number;
+  label: string;
+  token: string;
+  color: string;
+  controller: ControllerType;
+  spawn: Point;
+  goal: GoalZone;
+  position: Point;
+  wallsRemaining: number;
+  energy: number;
+  assists: number;
+  phantomAvailable: boolean;
+};
 export type Action =
   | { type: 'move'; to: Point } | { type: 'wall'; wall: Wall }
   | { type: 'assist'; via: Point; to: Point } | { type: 'break'; wall: Wall }
   | { type: 'phantom'; wall: Wall } | { type: 'probe'; to: Point };
 export type GameState = {
   mode: GameMode; mapId: MapId; layout: RaceLayout; width: number; height: number;
-  goals: Record<Player, GoalZone>; pawns: Record<Player, Point>; walls: Wall[];
-  remaining: Record<Player, number>; turn: Player; winner: Player | 'draw' | null; ply: number; rush?: RushState;
+  players?: PlayerState[]; turnOrder?: PlayerId[]; currentTurnIndex?: number;
+  /** Two-player compatibility projections retained while Classic/Rush migrate incrementally. */
+  goals: Record<Player, GoalZone>; pawns: Record<Player, Point>; remaining: Record<Player, number>;
+  walls: Wall[]; turn: PlayerId; winner: PlayerId | 'draw' | null; ply: number; rush?: RushState;
+};
+
+export const PLAYER_PRESENTATION: Record<PlayerId, Pick<PlayerState, 'label' | 'token' | 'color'>> = {
+  blue: { label: 'Player 1', token: '1', color: '#27c5ff' },
+  red: { label: 'Player 2', token: '2', color: '#ff5d73' },
+  amber: { label: 'Player 3', token: '3', color: '#ffc857' },
+  violet: { label: 'Player 4', token: '4', color: '#a98bff' },
 };
 
 let seedCounter = 0;
@@ -33,32 +60,107 @@ export function freshSeed(): number {
   return (cryptoSeed ^ Date.now() ^ Math.imul(seedCounter, 0x9e3779b1)) >>> 0;
 }
 
-export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean };
+export function cloneGoal(goal: GoalZone): GoalZone {
+  return goal.kind === 'cells' ? { kind: 'cells', cells: goal.cells.map(point => ({ ...point })) } : { ...goal };
+}
+
+function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone, wallsRemaining: number, controller: ControllerType, rush?: RushState): PlayerState {
+  const legacy = id === 'blue' || id === 'red' ? id : null;
+  return {
+    id, number, ...PLAYER_PRESENTATION[id], controller,
+    spawn: { ...spawn }, goal: cloneGoal(goal), position: { ...spawn }, wallsRemaining,
+    energy: legacy && rush ? rush.energy[legacy] : 0,
+    assists: legacy && rush ? rush.assists[legacy] : 0,
+    phantomAvailable: legacy && rush ? rush.phantomAvailable[legacy] : false,
+  };
+}
+
+export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean; playerCount?: ConvergencePlayerCount };
 export function newGame(options: NewGameOptions = {}): GameState {
   const mode = options.mode ?? 'classic';
+  if (mode === 'convergence') {
+    const requestedMap = MAP_CONFIGS[options.mapId ?? 'grand'];
+    const requestedCount = options.playerCount ?? 4;
+    const map = requestedMap.convergence ? requestedMap : MAP_CONFIGS.grand;
+    const supportedCount = map.convergence!.supportedPlayerCounts.includes(requestedCount) ? requestedCount : map.convergence!.supportedPlayerCounts[0];
+    const setup = convergenceSetup(map, supportedCount)!;
+    const players = setup.turnOrder.map((id, index) => {
+      const spawn = setup.spawns[id]!;
+      return playerState(id, index + 1, spawn.point, setup.goal, setup.wallsPerPlayer, 'HUMAN_LOCAL');
+    });
+    return {
+      mode, mapId: map.id, layout: 'convergence', width: map.width, height: map.height,
+      players, turnOrder: [...setup.turnOrder], currentTurnIndex: 0,
+      goals: { blue: cloneGoal(setup.goal), red: cloneGoal(setup.goal) },
+      pawns: { blue: { ...players[0].position }, red: { ...players[1].position } },
+      remaining: { blue: players[0].wallsRemaining, red: players[1].wallsRemaining },
+      walls: [], turn: setup.turnOrder[0], winner: null, ply: 0,
+    };
+  }
+
   const map = MAP_CONFIGS[options.mapId ?? 'sprint'];
-  const chosenLayout = map.layouts[options.layout ?? map.defaultLayout] ? (options.layout ?? map.defaultLayout) : map.defaultLayout;
+  const requestedLayout = options.layout === 'convergence' ? map.defaultLayout : options.layout ?? map.defaultLayout;
+  const chosenLayout = map.layouts[requestedLayout] ? requestedLayout : map.defaultLayout;
   const race = layoutConfig(map, chosenLayout);
   const seedLocked = mode === 'rush' && options.seedLocked === true;
   const seed = mode === 'rush' ? ((options.seed ?? freshSeed()) >>> 0) : 0;
+  const rush = mode === 'rush' ? {
+    seed, seedLocked,
+    energy: { blue: RULE_SETS.rush.energyStart, red: RULE_SETS.rush.energyStart },
+    assists: { blue: RULE_SETS.rush.assistStart, red: RULE_SETS.rush.assistStart },
+    momentum: { blue: 0, red: 0 }, phantomAvailable: { blue: true, red: true }, phantoms: [],
+    tiles: generateTiles(seed, map, chosenLayout), suddenDeath: false, pressureStage: 0, event: null, winnerReason: null,
+  } satisfies RushState : undefined;
+  const pawns = { blue: { ...race.spawns.blue.point }, red: { ...race.spawns.red.point } };
+  const goals = { blue: cloneGoal(race.goals.blue), red: cloneGoal(race.goals.red) };
+  const remaining = { blue: map.startingWalls, red: map.startingWalls };
   return {
     mode, mapId: map.id, layout: chosenLayout, width: map.width, height: map.height,
-    goals: { blue: { ...race.goals.blue }, red: { ...race.goals.red } },
-    pawns: { blue: { ...race.spawns.blue.point }, red: { ...race.spawns.red.point } },
-    walls: [], remaining: { blue: map.startingWalls, red: map.startingWalls }, turn: 'blue', winner: null, ply: 0,
-    ...(mode === 'rush' ? { rush: {
-      seed, seedLocked,
-      energy: { blue: RULE_SETS.rush.energyStart, red: RULE_SETS.rush.energyStart },
-      assists: { blue: RULE_SETS.rush.assistStart, red: RULE_SETS.rush.assistStart },
-      momentum: { blue: 0, red: 0 }, phantomAvailable: { blue: true, red: true }, phantoms: [],
-      tiles: generateTiles(seed, map, chosenLayout), suddenDeath: false, pressureStage: 0, event: null, winnerReason: null,
-    } satisfies RushState } : {}),
+    players: [
+      playerState('blue', 1, pawns.blue, goals.blue, remaining.blue, 'HUMAN_LOCAL', rush),
+      playerState('red', 2, pawns.red, goals.red, remaining.red, 'AI', rush),
+    ],
+    turnOrder: ['blue', 'red'], currentTurnIndex: 0,
+    goals, pawns, walls: [], remaining, turn: 'blue', winner: null, ply: 0,
+    ...(rush ? { rush } : {}),
   };
+}
+
+export function activePlayerStates(state: GameState): PlayerState[] {
+  const stored = state.players ?? PLAYERS.map((id, index) => playerState(id, index + 1, state.pawns[id], state.goals[id], state.remaining[id], id === 'blue' ? 'HUMAN_LOCAL' : 'AI', state.rush));
+  if (state.mode === 'convergence') return stored;
+  return stored.map(player => {
+    if (player.id !== 'blue' && player.id !== 'red') return player;
+    const id = player.id;
+    return {
+      ...player,
+      position: { ...state.pawns[id] }, goal: cloneGoal(state.goals[id]), wallsRemaining: state.remaining[id],
+      energy: state.rush?.energy[id] ?? 0, assists: state.rush?.assists[id] ?? 0,
+      phantomAvailable: state.rush?.phantomAvailable?.[id] ?? false,
+    };
+  });
+}
+
+export function currentPlayerId(state: Pick<GameState, 'mode' | 'turn' | 'turnOrder' | 'currentTurnIndex'>): PlayerId {
+  return state.mode === 'convergence' ? state.turnOrder?.[state.currentTurnIndex ?? 0] ?? state.turn : state.turn;
+}
+export function playerStateById(state: GameState, id: PlayerId): PlayerState {
+  const player = activePlayerStates(state).find(item => item.id === id);
+  if (!player) throw new Error(`Unknown active player: ${id}`);
+  return player;
+}
+export function nextTurn(state: GameState): { turn: PlayerId; currentTurnIndex: number } {
+  const current = currentPlayerId(state);
+  const turnOrder = state.turnOrder ?? ['blue', 'red'];
+  const index = Math.max(0, turnOrder.indexOf(current));
+  const currentTurnIndex = (index + 1) % turnOrder.length;
+  return { currentTurnIndex, turn: turnOrder[currentTurnIndex] };
 }
 
 export function rematchGame(state: GameState): GameState {
   return newGame({
     mode: state.mode, mapId: state.mapId, layout: state.layout,
+    ...(state.mode === 'convergence' ? { playerCount: activePlayerStates(state).length as ConvergencePlayerCount } : {}),
     ...(state.mode === 'rush' && state.rush?.seedLocked ? { seed: state.rush.seed, seedLocked: true } : {}),
   });
 }

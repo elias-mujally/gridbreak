@@ -1,4 +1,4 @@
-import { GameState, PLAYERS, Point, Wall, inBounds } from './state';
+import { GameState, PlayerId, Point, Wall, activePlayerStates, currentPlayerId, inBounds, playerStateById } from './state';
 import { hasRoute } from './pathfinding';
 import type { BoardDimensions } from './modes';
 
@@ -27,17 +27,18 @@ export function collidesWithWall(walls: readonly Wall[], candidate: Wall): boole
   });
 }
 export function placementGeometry(state: GameState): Wall[] { return state.mode === 'rush' && state.rush ? [...state.walls, ...state.rush.phantoms] : state.walls; }
-export function isLegalWall(state: GameState, wall: Wall, player = state.turn): boolean {
+export function isLegalWall(state: GameState, wall: Wall, player: PlayerId = currentPlayerId(state)): boolean {
   const dimensions = { width: state.width, height: state.height };
-  if (state.winner || state.remaining[player] <= 0 || !isWallAnchorInBounds(wall, dimensions) || collidesWithWall(placementGeometry(state), wall)) return false;
+  const actor = playerStateById(state, player);
+  if (state.winner || actor.wallsRemaining <= 0 || !isWallAnchorInBounds(wall, dimensions) || collidesWithWall(placementGeometry(state), wall)) return false;
   const nextWalls = [...placementGeometry(state), wall];
-  return PLAYERS.every(id => hasRoute(state.pawns[id], state.goals[id], nextWalls, dimensions));
+  return activePlayerStates(state).every(item => hasRoute(item.position, item.goal, nextWalls, dimensions));
 }
-export function isLegalPhantomWall(state: GameState, wall: Wall, player = state.turn): boolean {
-  return state.mode === 'rush' && !!state.rush?.phantomAvailable[player] && isLegalWall(state, wall, player);
+export function isLegalPhantomWall(state: GameState, wall: Wall, player: PlayerId = currentPlayerId(state)): boolean {
+  return state.mode === 'rush' && (player === 'blue' || player === 'red') && !!state.rush?.phantomAvailable[player] && isLegalWall(state, wall, player);
 }
-export function legalWalls(state: GameState, player = state.turn): Wall[] {
-  if (state.winner || state.remaining[player] <= 0) return [];
+export function legalWalls(state: GameState, player: PlayerId = currentPlayerId(state)): Wall[] {
+  if (state.winner || playerStateById(state, player).wallsRemaining <= 0) return [];
   const result: Wall[] = [];
   for (let row = 0; row < state.height - 1; row++) for (let col = 0; col < state.width - 1; col++) {
     for (const orientation of ['horizontal', 'vertical'] as const) {

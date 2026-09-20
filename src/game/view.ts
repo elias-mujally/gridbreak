@@ -1,4 +1,4 @@
-import { GameMode, GameState, PLAYERS, Player, Point, PowerTile, RushEvent, Wall, inBounds, otherPlayer, samePoint } from './state';
+import { GameMode, GameState, Player, PlayerId, PlayerState, Point, PowerTile, RushEvent, Wall, activePlayerStates, inBounds, otherPlayer, samePoint } from './state';
 import { blocksEdge, collidesWithWall, isWallAnchorInBounds } from './walls';
 import { hasRoute } from './pathfinding';
 import type { GoalZone, MapId, RaceLayout } from './modes';
@@ -11,8 +11,9 @@ export type RushView = {
 };
 export type GameView = {
   viewer: Player; mode: GameMode; mapId: MapId; layout: RaceLayout; width: number; height: number;
+  players: PlayerState[]; turnOrder: PlayerId[]; currentTurnIndex: number;
   goals: Record<Player, GoalZone>; pawns: Record<Player, Point>;
-  walls: VisibleWall[]; pathWalls: Wall[]; remaining: Record<Player, number>; turn: Player;
+  walls: VisibleWall[]; pathWalls: Wall[]; remaining: Record<Player, number>; turn: PlayerId;
   winner: GameState['winner']; ply: number; rush?: RushView;
 };
 
@@ -24,7 +25,9 @@ export function viewForPlayer(state: GameState, viewer: Player): GameView {
   const pathWalls = walls.filter(wall => !wall.knownPhantom).map(({ knownPhantom: _unused, ...wall }) => wall);
   const result: GameView = {
     viewer, mode: state.mode, mapId: state.mapId, layout: state.layout, width: state.width, height: state.height,
-    goals: { blue: { ...state.goals.blue }, red: { ...state.goals.red } },
+    players: activePlayerStates(state).map(player => ({ ...player, spawn: { ...player.spawn }, position: { ...player.position }, goal: player.goal.kind === 'cells' ? { kind: 'cells', cells: player.goal.cells.map(point => ({ ...point })) } : { ...player.goal } })),
+    turnOrder: [...(state.turnOrder ?? ['blue', 'red'])], currentTurnIndex: state.currentTurnIndex ?? (state.turn === 'red' ? 1 : 0),
+    goals: { blue: state.goals.blue.kind === 'cells' ? { kind: 'cells', cells: state.goals.blue.cells.map(point => ({ ...point })) } : { ...state.goals.blue }, red: state.goals.red.kind === 'cells' ? { kind: 'cells', cells: state.goals.red.cells.map(point => ({ ...point })) } : { ...state.goals.red } },
     pawns: { blue: { ...state.pawns.blue }, red: { ...state.pawns.red } }, walls, pathWalls,
     remaining: { ...state.remaining }, turn: state.turn, winner: state.winner, ply: state.ply,
   };
@@ -42,7 +45,7 @@ export function viewForPlayer(state: GameState, viewer: Player): GameView {
   return result;
 }
 export function perceivedMovementBoard(view: GameView) { return { ...view, walls: view.pathWalls }; }
-export function probeTargets(view: GameView, player: Player = view.turn): Point[] {
+export function probeTargets(view: GameView, player: Player = view.turn as Player): Point[] {
   if (view.mode !== 'rush' || view.winner) return [];
   const from = view.pawns[player]; const opponent = view.pawns[otherPlayer(player)];
   return [{ row: from.row - 1, col: from.col }, { row: from.row + 1, col: from.col }, { row: from.row, col: from.col - 1 }, { row: from.row, col: from.col + 1 }]
@@ -53,6 +56,5 @@ export function canPlaceViewedWall(view: GameView, wall: Wall, phantom = false):
   if (view.winner || view.remaining[view.viewer] <= 0 || (phantom && (view.mode !== 'rush' || !view.rush?.ownPhantomAvailable)) ||
       !isWallAnchorInBounds(wall, dimensions) || collidesWithWall(view.walls, wall)) return false;
   const geometry = [...view.walls, wall];
-  return PLAYERS.every(player => hasRoute(view.pawns[player], view.goals[player], geometry, dimensions));
+  return view.players.every(player => hasRoute(player.position, player.goal, geometry, dimensions));
 }
-

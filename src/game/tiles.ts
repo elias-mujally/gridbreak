@@ -1,4 +1,4 @@
-import { layoutConfig, pointInGoal, type MapConfig, type RaceLayout } from './modes';
+import { layoutConfig, pointInGoal, type LegacyRaceLayout, type MapConfig } from './modes';
 import type { Point, PowerTile } from './state';
 
 export function seededRandom(seed: number): () => number {
@@ -13,7 +13,7 @@ export function seededRandom(seed: number): () => number {
 }
 
 const pointKey = (point: Point) => `${point.row},${point.col}`;
-export function generateTiles(seed: number, config: MapConfig, layoutId: RaceLayout = config.defaultLayout): PowerTile[] {
+export function generateTiles(seed: number, config: MapConfig, layoutId: LegacyRaceLayout = config.defaultLayout): PowerTile[] {
   const random = seededRandom(seed);
   const race = layoutConfig(config, layoutId);
   const [minimum, maximum] = config.rewardRange;
@@ -21,7 +21,7 @@ export function generateTiles(seed: number, config: MapConfig, layoutId: RaceLay
   for (let count = minimum + (minimum % 2); count <= maximum; count += 2) counts.push(count);
   const rewardCount = counts[Math.floor(random() * counts.length)] ?? 2;
   const spawns = [race.spawns.blue.point, race.spawns.red.point];
-  const sharedEdge = race.goals.blue.edge === race.goals.red.edge ? race.goals.blue.edge : null;
+  const sharedEdge = race.goals.blue.kind === 'edge' && race.goals.red.kind === 'edge' && race.goals.blue.edge === race.goals.red.edge ? race.goals.blue.edge : null;
   const mirror = (point: Point): Point => {
     if (layoutId === 'parallel' && (sharedEdge === 'left' || sharedEdge === 'right')) return { row: config.height - 1 - point.row, col: point.col };
     if (layoutId === 'parallel') return { row: point.row, col: config.width - 1 - point.col };
@@ -46,4 +46,3 @@ export function generateTiles(seed: number, config: MapConfig, layoutId: RaceLay
     return pair.map(point => ({ kind, point, consumed: false }));
   });
 }
-

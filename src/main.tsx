@@ -4,5 +4,6 @@ import App from './ui/App';
 import './ui/styles.css';
 import './ui/mobile.css';
 import './ui/rush.css';
+import './ui/convergence.css';
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

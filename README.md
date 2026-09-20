@@ -1,6 +1,6 @@
 # GridBreak
 
-GridBreak is an original local path-racing strategy game prototype built with Vite, React, and TypeScript. It currently supports Classic and Rush rules, six shared maps, two race layouts, local AI, deterministic Rush seeds, and responsive SVG/CSS rendering.
+GridBreak is an original local path-racing strategy game prototype built with Vite, React, and TypeScript. It supports Classic and Rush against local AI plus the experimental Convergence mode for two to four people sharing one device.
 
 ## Run locally
 
@@ -27,6 +27,12 @@ The preview server prints its local URL. Query parameters such as
 `?map=wide&mode=rush&layout=parallel&difficulty=hard&seed=33&aiDebug=1`
 remain available for reproducible QA.
 
+Convergence QA links use `mode=convergence` and `players=2`, `3`, or `4`, for example:
+
+```text
+?map=grand&mode=convergence&players=4
+```
+
 ## Deploy to Vercel
 
 The repository is configured as a Vite project:
@@ -50,24 +56,25 @@ No environment variables, backend services, or runtime secrets are required.
 
 The setup flow is:
 
-**Mode → Map → Layout → Difficulty → Start**
+**Mode → Map → Layout or player count → Difficulty when applicable → Start**
 
 Game mode and map are independent.
 
 - **Classic** uses movement, collision jumps, side-steps, and route-safe walls only.
 - **Rush** adds Energy, Assist, rewards, Break, Phantom Walls, Momentum, and Sudden Death.
-- Both modes use the same map dimensions, wall inventory, spawn zones, and goal zones.
+- **Convergence** is a local shared-device center race for two to four human players. Its V1 rules use movement and walls without Rush resources.
+- Classic and Rush use the same map dimensions, wall inventory, spawn zones, and goal zones.
 
 ## Shared maps
 
-| Map | Size | Walls | Compatible layouts | Rush rewards | Sudden Death | Deadline | AI wall limit |
-|---|---:|---:|---|---:|---:|---:|---:|
-| Sprint | 7×7 | 7 | Opposite | 2–4 | 32 | 64 | 72 |
-| Arena | 10×10 | 10 | Opposite | 4–6 | 50 | 96 | 96 |
-| Wide | 12×7 | 9 | Opposite, horizontal Parallel | 4–6 | 40 | 80 | 96 |
-| Gauntlet | 10×18 | 14 | Opposite, vertical Parallel | 6–8 | 72 | 140 | 120 |
-| Grand | 15×15 | 16 | Opposite | 8–10 | 84 | 160 | 140 |
-| Titan | 20×20 | 20 | Opposite | 10–14 | 120 | 220 | 160 |
+| Map | Size | Classic/Rush walls | Compatible layouts | Convergence players | Convergence walls each |
+|---|---:|---:|---|---|---|
+| Sprint | 7×7 | 7 | Opposite | — | — |
+| Arena | 10×10 | 10 | Opposite | 2 | 5 |
+| Wide | 12×7 | 9 | Opposite, horizontal Parallel | — | — |
+| Gauntlet | 10×18 | 14 | Opposite, vertical Parallel | — | — |
+| Grand | 15×15 | 16 | Opposite | 2–4 | 10 / 7 / 5 |
+| Titan | 20×20 | 20 | Opposite | 2–4 | 14 / 9 / 7 |
 
 These are playtest defaults rather than final balance values.
 
@@ -96,6 +103,19 @@ Both players begin on the same edge with mirrored, separated positions and race 
 - Gauntlet Parallel: bottom edge → top edge.
 
 Open-board starting routes are equal in both Parallel layouts.
+
+### Convergence
+
+Convergence uses configuration-owned player counts, spawn points, a central GoalZone, and wall inventories.
+
+- Two players start North and South.
+- Three players start North, East, and South. Their open-board route lengths are equal; leaving West unused creates an acknowledged tactical asymmetry for playtesting.
+- Four players start North, East, South, and West.
+- Odd boards use one center cell. Even boards use a symmetric 2×2 center region.
+- Every player is a `HUMAN_LOCAL` controller in V1.
+- A wall is accepted only when BFS still finds a route from every active pawn to the center.
+
+The first collision pawn may be jumped when the cell behind it is open. When that cell is blocked by a wall, board edge, or another pawn, the mover receives open side-step destinations around the first pawn. Chained jumps over multiple pawns are intentionally excluded because they become ambiguous in clusters.
 
 ## Rush movement correction
 
@@ -170,8 +190,8 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 ## Architecture
 
 - `src/game/modes.ts` — shared `MapConfig`, `SpawnZone`, `GoalZone`, and layout configuration
-- `src/game/state.ts` — serializable match state, mode/map/layout selection, seeds, and rematches
-- `src/game/movement.ts` — orthogonal movement, collision rules, and Assist paths
+- `src/game/state.ts` — serializable player/controller model, turn order, match state, seeds, and rematches
+- `src/game/movement.ts` — orthogonal N-player collision rules and two-player Rush Assist paths
 - `src/game/pathfinding.ts` — BFS to configured goal zones and points
 - `src/game/walls.ts` — geometry and all-player route preservation
 - `src/game/tiles.ts` — layout-aware deterministic reward generation
@@ -181,21 +201,33 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 - `src/game/aiRush.ts` — tactical Rush candidate generation, scoring, and explanation
 - `src/ui/ModePicker.tsx` — mode, map, layout, difficulty, and seed setup
 - `src/ui/App.tsx` — responsive rendering and validated input dispatch
+- `src/ui/ConvergenceMatch.tsx` — local shared-device N-player board and turn presentation
 
-## Remaining two-player assumptions
+## N-player foundation
 
-The spawn and goal refactor is compatible with future center-goal layouts, but Convergence still requires deliberate engine work:
+`GameState` now includes serializable `PlayerState[]`, `turnOrder`, and `currentTurnIndex`. Each player owns an id, number, non-color token, visual color, controller type, spawn, goal, position, wall inventory, and optional Rush resources. Supported controller values are:
 
-- `Player` is currently the union `blue | red`.
-- State resources use two-entry `Record<Player, ...>` objects.
-- `otherPlayer` alternates between exactly two turns.
-- Collision movement checks one opponent pawn.
-- Deadline tie-breaking compares Blue and Red directly.
-- Local UI and AI assume Blue is human and Red is the rival.
-- Win presentation and labels are two-player specific.
+- `HUMAN_LOCAL`
+- `AI`
+- `HUMAN_REMOTE` as a future architecture value only
 
-Convergence, three-player, and four-player gameplay are not implemented.
+Classic and Rush retain two-player compatibility projections while their proven AI and resource rules remain specialized. Shared movement, victory, turn advancement, wall validation, goals, and rendering read the active player model.
+
+## Work required before Online Multiplayer
+
+Networking is intentionally absent. A future authoritative implementation still needs:
+
+1. room and membership state with private room codes;
+2. authenticated or guest remote identities mapped to `HUMAN_REMOTE` controllers;
+3. a server-owned canonical `GameState` and action sequence number;
+4. validation of serialized `move` and `wall` actions on the server using this pure engine;
+5. action acknowledgement, ordering, duplicate rejection, and client reconciliation;
+6. reconnect snapshots plus resumable turn timers;
+7. room lifecycle, disconnect, surrender, and abandoned-match policies;
+8. versioned replay/event storage and compatibility migrations.
+
+The current action and state shapes are JSON serializable, but no transport, persistence, authentication, or server authority is included.
 
 ## Current scope
 
-The project has no accounts, backend, online multiplayer, ads, purchases, rankings, cosmetics, sound, Phaser dependency, Convergence, or Phase 3 features.
+The project has no accounts, backend, online multiplayer, ads, purchases, rankings, cosmetics, sound, Phaser dependency, or Phase 3 features.
