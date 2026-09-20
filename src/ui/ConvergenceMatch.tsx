@@ -47,7 +47,7 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
   const gridStyle = { gridTemplateColumns: `repeat(${game.width},minmax(0,1fr))`, gridTemplateRows: `repeat(${game.height},minmax(0,1fr))`, columnGap: `${12 / boardWidth * 100}%`, rowGap: `${12 / boardHeight * 100}%` } as CSSProperties;
   const denseBoard = Math.max(game.width, game.height) >= 15;
   const placementMode = mode !== 'move';
-  const canAct = !game.winner && !pending && (!localPlayerId || activeId === localPlayerId);
+  const canAct = !game.winner && !pending && active.controller === 'HUMAN_LOCAL' && (!localPlayerId || activeId === localPlayerId);
   const hoverLegal = hover ? isLegalWall(game, hover, activeId) : false;
   const map = MAP_CONFIGS[game.mapId];
 
@@ -71,18 +71,18 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
     </header>
     <main className="main-layout convergence-layout">
       <aside className="intro-panel convergence-intro">
-        <div className="eyebrow"><span className="signal-dot" /> {online ? 'AUTHORITATIVE ONLINE ROOM' : 'LOCAL SHARED DEVICE'}</div>
+        <div className="eyebrow"><span className="signal-dot" /> {online ? 'AUTHORITATIVE ONLINE ROOM' : players.some(player => player.controller === 'AI') ? 'LOCAL MIXED CONTROL' : 'LOCAL SHARED DEVICE'}</div>
         <h1>Meet at<br /><em>the center.</em></h1>
         <p className="lede">Race from the perimeter. Shape every route. First token into the one true center cell wins.</p>
         <div className="how-to"><span>01 / ONE GOAL CELL</span><p>Move or place one wall. Every barrier must leave every player a route to the exact center.</p></div>
         <div className="convergence-roster" aria-label="Players">
           {players.map(player => <div key={player.id} className={`roster-player identity-${player.id} ${player.id === activeId && !game.winner ? 'active' : ''}`} style={playerStyle(player.color)}>
-            <b aria-hidden="true">{player.token}</b><span><strong>{player.label}</strong><small>{player.wallsRemaining} walls · {routeLength(player.position, player.goal, game.walls, game)} steps{memberStatus?.[player.id] ? ` · ${memberStatus[player.id]}` : ''}</small></span>
+            <b aria-hidden="true">{player.token}</b><span><strong>{player.label}</strong><small>{player.controller === 'AI' ? `AI — ${player.difficulty.toUpperCase()} · ` : player.controller === 'HUMAN_LOCAL' ? 'LOCAL · ' : ''}{player.wallsRemaining} walls · {routeLength(player.position, player.goal, game.walls, game)} steps{memberStatus?.[player.id] ? ` · ${memberStatus[player.id]}` : ''}</small></span>
           </div>)}
         </div>
       </aside>
       <section className="arena convergence-arena" aria-label={`${game.width} by ${game.height} Convergence board`}>
-        <div className={`shared-turn identity-${active.id}`} style={playerStyle(active.color)} aria-live="polite"><span>{active.token}</span><div><small>ACTIVE PLAYER</small><strong>{game.winner ? 'MATCH COMPLETE' : `${active.label.toUpperCase()}'S TURN`}</strong></div><b>{active.wallsRemaining} WALLS</b></div>
+        <div className={`shared-turn identity-${active.id}`} style={playerStyle(active.color)} aria-live="polite"><span>{active.token}</span><div><small>{active.controller === 'AI' ? `AI — ${active.difficulty.toUpperCase()}` : 'ACTIVE PLAYER'}</small><strong>{game.winner ? 'MATCH COMPLETE' : active.controller === 'AI' && pending ? `${active.label.toUpperCase()} THINKING` : `${active.label.toUpperCase()}'S TURN`}</strong></div><b>{active.wallsRemaining} WALLS</b></div>
         <div className="mobile-toolbar convergence-toolbar" role="group" aria-label="Current player action">
           <button className={mode === 'move' ? 'selected' : ''} onClick={() => setMode('move')} disabled={!canAct}>✣ <span>Move</span></button>
           <button className={mode === 'horizontal' ? 'selected' : ''} onClick={() => setMode('horizontal')} disabled={!canAct || active.wallsRemaining === 0}>━ <span>Wall —</span></button>
@@ -133,6 +133,6 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
         <button className="change-mode-bottom" onClick={onMainMenu}>Main Menu</button>
       </aside>
     </main>
-    <footer className="footer"><span>GRIDBREAK / {map.name.toUpperCase()} {game.width}×{game.height}</span><span>{players.length} {online ? 'ONLINE' : 'LOCAL'} PLAYERS · ONE CENTER GOAL</span></footer>
+    <footer className="footer"><span>GRIDBREAK / {map.name.toUpperCase()} {game.width}×{game.height}</span><span>{players.length} {online ? 'ONLINE PLAYERS' : 'PLAYER SLOTS'} · ONE CENTER GOAL</span></footer>
   </div>;
 }

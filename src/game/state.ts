@@ -1,4 +1,4 @@
-import { MAP_CONFIGS, RULE_SETS, convergenceSetup, layoutConfig, type ConvergencePlayerCount, type GoalZone, type MapId, type RaceLayout } from './modes';
+import { MAP_CONFIGS, RULE_SETS, convergenceSetup, isControllerCombinationSupported, layoutConfig, matchCapability, type ConvergencePlayerCount, type GoalZone, type MapId, type RaceLayout } from './modes';
 import { generateTiles } from './tiles';
 
 export type Player = 'blue' | 'red';
@@ -8,6 +8,7 @@ export const PLAYER_IDS: readonly PlayerId[] = ['blue', 'red', 'amber', 'violet'
 export type ControllerType = 'HUMAN_LOCAL' | 'AI' | 'HUMAN_REMOTE';
 export type GameMode = 'classic' | 'rush' | 'convergence';
 export type Difficulty = 'easy' | 'normal' | 'hard';
+export type ControllerSelection = { type: ControllerType; difficulty?: Difficulty };
 export type Point = { row: number; col: number };
 export type Wall = { row: number; col: number; orientation: 'horizontal' | 'vertical'; owner?: PlayerId };
 export type PhantomWall = Wall & { owner: Player };
@@ -26,6 +27,7 @@ export type PlayerState = {
   token: string;
   color: string;
   controller: ControllerType;
+  difficulty: Difficulty;
   spawn: Point;
   goal: GoalZone;
   position: Point;
@@ -64,10 +66,10 @@ export function cloneGoal(goal: GoalZone): GoalZone {
   return goal.kind === 'cell' ? { kind: 'cell', cell: { ...goal.cell } } : { ...goal };
 }
 
-function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone, wallsRemaining: number, controller: ControllerType, rush?: RushState): PlayerState {
+function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone, wallsRemaining: number, controller: ControllerType, rush?: RushState, difficulty: Difficulty = 'normal'): PlayerState {
   const legacy = id === 'blue' || id === 'red' ? id : null;
   return {
-    id, number, ...PLAYER_PRESENTATION[id], controller,
+    id, number, ...PLAYER_PRESENTATION[id], controller, difficulty,
     spawn: { ...spawn }, goal: cloneGoal(goal), position: { ...spawn }, wallsRemaining,
     energy: legacy && rush ? rush.energy[legacy] : 0,
     assists: legacy && rush ? rush.assists[legacy] : 0,
@@ -75,18 +77,23 @@ function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone,
   };
 }
 
-export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean; playerCount?: ConvergencePlayerCount };
+export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean; playerCount?: ConvergencePlayerCount; controllers?: ControllerSelection[] };
 export function newGame(options: NewGameOptions = {}): GameState {
   const mode = options.mode ?? 'classic';
   if (mode === 'convergence') {
     const requestedMap = MAP_CONFIGS[options.mapId ?? 'grand'];
     const requestedCount = options.playerCount ?? 4;
-    const map = requestedMap.convergence ? requestedMap : MAP_CONFIGS.grand;
-    const supportedCount = map.convergence!.supportedPlayerCounts.includes(requestedCount) ? requestedCount : map.convergence!.supportedPlayerCounts[0];
-    const setup = convergenceSetup(map, supportedCount)!;
+    if (!requestedMap.convergence) throw new Error(`${requestedMap.name} does not support Convergence.`);
+    const capability = matchCapability(requestedMap.id, mode, 'convergence', requestedCount);
+    if (!capability) throw new Error(`${requestedMap.name} does not support ${requestedCount}-player Convergence.`);
+    const selections: ControllerSelection[] = options.controllers ?? Array.from({ length: requestedCount }, () => ({ type: 'HUMAN_LOCAL' as const }));
+    if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type))) throw new Error('Unsupported controller combination for this match.');
+    const map = requestedMap;
+    const setup = convergenceSetup(map, requestedCount)!;
     const players = setup.turnOrder.map((id, index) => {
       const spawn = setup.spawns[id]!;
-      return playerState(id, index + 1, spawn.point, setup.goal, setup.wallsPerPlayer, 'HUMAN_LOCAL');
+      const selection = selections[index];
+      return playerState(id, index + 1, spawn.point, setup.goal, setup.wallsPerPlayer, selection.type, undefined, selection.difficulty ?? 'normal');
     });
     return {
       mode, mapId: map.id, layout: 'convergence', width: map.convergence!.width, height: map.convergence!.height,
@@ -100,7 +107,12 @@ export function newGame(options: NewGameOptions = {}): GameState {
 
   const map = MAP_CONFIGS[options.mapId ?? 'sprint'];
   const requestedLayout = options.layout === 'convergence' ? map.defaultLayout : options.layout ?? map.defaultLayout;
-  const chosenLayout = map.layouts[requestedLayout] ? requestedLayout : map.defaultLayout;
+  if (!map.layouts[requestedLayout]) throw new Error(`${map.name} does not support the ${requestedLayout} layout.`);
+  const chosenLayout = requestedLayout;
+  const capability = matchCapability(map.id, mode, chosenLayout, 2);
+  if (!capability) throw new Error(`${map.name} does not support ${mode} with ${chosenLayout}.`);
+  const selections: ControllerSelection[] = options.controllers ?? [{ type: 'HUMAN_LOCAL' as const }, { type: 'AI' as const }];
+  if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type))) throw new Error('Unsupported controller combination for this match.');
   const race = layoutConfig(map, chosenLayout);
   const seedLocked = mode === 'rush' && options.seedLocked === true;
   const seed = mode === 'rush' ? ((options.seed ?? freshSeed()) >>> 0) : 0;
@@ -117,8 +129,8 @@ export function newGame(options: NewGameOptions = {}): GameState {
   return {
     mode, mapId: map.id, layout: chosenLayout, width: map.width, height: map.height,
     players: [
-      playerState('blue', 1, pawns.blue, goals.blue, remaining.blue, 'HUMAN_LOCAL', rush),
-      playerState('red', 2, pawns.red, goals.red, remaining.red, 'AI', rush),
+      playerState('blue', 1, pawns.blue, goals.blue, remaining.blue, selections[0].type, rush, selections[0].difficulty ?? 'normal'),
+      playerState('red', 2, pawns.red, goals.red, remaining.red, selections[1].type, rush, selections[1].difficulty ?? 'normal'),
     ],
     turnOrder: ['blue', 'red'], currentTurnIndex: 0,
     goals, pawns, walls: [], remaining, turn: 'blue', winner: null, ply: 0,
@@ -158,8 +170,10 @@ export function nextTurn(state: GameState): { turn: PlayerId; currentTurnIndex: 
 }
 
 export function rematchGame(state: GameState): GameState {
+  const controllers = activePlayerStates(state).map(player => ({ type: player.controller, difficulty: player.difficulty }));
   return newGame({
     mode: state.mode, mapId: state.mapId, layout: state.layout,
+    controllers,
     ...(state.mode === 'convergence' ? { playerCount: activePlayerStates(state).length as ConvergencePlayerCount } : {}),
     ...(state.mode === 'rush' && state.rush?.seedLocked ? { seed: state.rush.seed, seedLocked: true } : {}),
   });

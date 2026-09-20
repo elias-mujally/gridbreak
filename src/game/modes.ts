@@ -1,4 +1,4 @@
-import type { GameMode, Player, PlayerId, Point } from './state';
+import type { ControllerType, GameMode, Player, PlayerId, Point } from './state';
 
 export type MapId = 'sprint' | 'arena' | 'wide' | 'gauntlet' | 'grand' | 'titan';
 /** Compatibility name retained for saved Phase 2 fixtures. Maps are now mode-independent. */
@@ -27,6 +27,15 @@ export type ConvergenceConfig = BoardDimensions & {
   supportedPlayerCounts: ConvergencePlayerCount[];
   setups: Partial<Record<ConvergencePlayerCount, ConvergenceSetup>>;
 };
+export type ControllerPolicy = 'LOCAL_OPEN' | 'LOCAL_RUSH_PRIVATE' | 'REMOTE_ONLY';
+export type MatchCapability = {
+  mode: GameMode;
+  layout: RaceLayout;
+  playerCounts: ConvergencePlayerCount[];
+  geometry: 'race' | 'center';
+  controllerPolicy: ControllerPolicy;
+  online: boolean;
+};
 export type MapConfig = BoardDimensions & {
   id: MapId;
   name: string;
@@ -40,6 +49,7 @@ export type MapConfig = BoardDimensions & {
   deadlinePly: number;
   wallDrainEvery: number;
   aiWallLimit: number;
+  capabilities: MatchCapability[];
 };
 
 const CONVERGENCE_IDS: PlayerId[] = ['blue', 'red', 'amber', 'violet'];
@@ -121,18 +131,57 @@ function layouts(width: number, height: number, parallel?: 'horizontal' | 'verti
   };
 }
 
+type MapDefinition = Omit<MapConfig, 'capabilities'> & { onlineConvergence?: boolean };
+function defineMap(definition: MapDefinition): MapConfig {
+  const { onlineConvergence = false, ...map } = definition;
+  const raceLayouts = (Object.keys(map.layouts) as LegacyRaceLayout[]).filter(layout => !!map.layouts[layout]);
+  const capabilities: MatchCapability[] = raceLayouts.flatMap(layout => [
+    { mode: 'classic', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_OPEN', online: false },
+    // A shared screen cannot keep Phantom Walls private, so Rush is intentionally Human vs AI only.
+    { mode: 'rush', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_RUSH_PRIVATE', online: false },
+  ]);
+  if (map.convergence) capabilities.push({
+    mode: 'convergence', layout: 'convergence', playerCounts: [...map.convergence.supportedPlayerCounts],
+    geometry: 'center', controllerPolicy: 'LOCAL_OPEN', online: onlineConvergence,
+  });
+  return { ...map, capabilities };
+}
+
 export const MAP_CONFIGS: Record<MapId, MapConfig> = {
-  sprint: { id: 'sprint', name: 'Sprint', width: 7, height: 7, startingWalls: 7, layouts: layouts(7, 7), defaultLayout: 'opposite', rewardRange: [2, 4], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 32, deadlinePly: 64, wallDrainEvery: 4, aiWallLimit: 72 },
-  arena: { id: 'arena', name: 'Arena', width: 10, height: 10, startingWalls: 10, layouts: layouts(10, 10), defaultLayout: 'opposite', convergence: convergence(11, 11, { 2: 5 }), rewardRange: [4, 6], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 50, deadlinePly: 96, wallDrainEvery: 5, aiWallLimit: 96 },
-  wide: { id: 'wide', name: 'Wide', width: 12, height: 7, startingWalls: 9, layouts: layouts(12, 7, 'horizontal'), defaultLayout: 'opposite', rewardRange: [4, 6], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 40, deadlinePly: 80, wallDrainEvery: 4, aiWallLimit: 96 },
-  gauntlet: { id: 'gauntlet', name: 'Gauntlet', width: 10, height: 18, startingWalls: 14, layouts: layouts(10, 18, 'vertical'), defaultLayout: 'opposite', rewardRange: [6, 8], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 72, deadlinePly: 140, wallDrainEvery: 6, aiWallLimit: 120 },
-  grand: { id: 'grand', name: 'Grand', width: 15, height: 15, startingWalls: 16, layouts: layouts(15, 15), defaultLayout: 'opposite', convergence: convergence(15, 15, { 2: 10, 3: 7, 4: 5 }), rewardRange: [8, 10], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 84, deadlinePly: 160, wallDrainEvery: 7, aiWallLimit: 140 },
-  titan: { id: 'titan', name: 'Titan', width: 20, height: 20, startingWalls: 20, layouts: layouts(20, 20), defaultLayout: 'opposite', convergence: convergence(21, 21, { 2: 14, 3: 9, 4: 7 }), rewardRange: [10, 14], rewardWeights: { energy: 65, boost: 35 }, suddenDeathPly: 120, deadlinePly: 220, wallDrainEvery: 8, aiWallLimit: 160 },
+  sprint: defineMap({ id: 'sprint', name: 'Sprint', width: 7, height: 7, startingWalls: 7, layouts: layouts(7, 7), defaultLayout: 'opposite', rewardRange: [2, 4], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 32, deadlinePly: 64, wallDrainEvery: 4, aiWallLimit: 72 }),
+  arena: defineMap({ id: 'arena', name: 'Arena', width: 10, height: 10, startingWalls: 10, layouts: layouts(10, 10), defaultLayout: 'opposite', convergence: convergence(11, 11, { 2: 5 }), onlineConvergence: true, rewardRange: [4, 6], rewardWeights: { energy: 55, boost: 45 }, suddenDeathPly: 50, deadlinePly: 96, wallDrainEvery: 5, aiWallLimit: 96 }),
+  wide: defineMap({ id: 'wide', name: 'Wide', width: 12, height: 7, startingWalls: 9, layouts: layouts(12, 7, 'horizontal'), defaultLayout: 'opposite', rewardRange: [4, 6], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 40, deadlinePly: 80, wallDrainEvery: 4, aiWallLimit: 96 }),
+  gauntlet: defineMap({ id: 'gauntlet', name: 'Gauntlet', width: 10, height: 18, startingWalls: 14, layouts: layouts(10, 18, 'vertical'), defaultLayout: 'opposite', rewardRange: [6, 8], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 72, deadlinePly: 140, wallDrainEvery: 6, aiWallLimit: 120 }),
+  grand: defineMap({ id: 'grand', name: 'Grand', width: 15, height: 15, startingWalls: 16, layouts: layouts(15, 15), defaultLayout: 'opposite', convergence: convergence(15, 15, { 2: 10, 3: 7, 4: 5 }), onlineConvergence: true, rewardRange: [8, 10], rewardWeights: { energy: 60, boost: 40 }, suddenDeathPly: 84, deadlinePly: 160, wallDrainEvery: 7, aiWallLimit: 140 }),
+  titan: defineMap({ id: 'titan', name: 'Titan', width: 20, height: 20, startingWalls: 20, layouts: layouts(20, 20), defaultLayout: 'opposite', convergence: convergence(21, 21, { 2: 14, 3: 9, 4: 7 }), onlineConvergence: true, rewardRange: [10, 14], rewardWeights: { energy: 65, boost: 35 }, suddenDeathPly: 120, deadlinePly: 220, wallDrainEvery: 8, aiWallLimit: 160 }),
 };
 
 export const MAP_IDS = Object.keys(MAP_CONFIGS) as MapId[];
 export const RUSH_MAP_IDS = MAP_IDS;
 export const CONVERGENCE_MAP_IDS = MAP_IDS.filter(id => !!MAP_CONFIGS[id].convergence);
+
+export function matchCapability(mapId: MapId, mode: GameMode, layout: RaceLayout, playerCount: number): MatchCapability | null {
+  return MAP_CONFIGS[mapId].capabilities.find(capability => capability.mode === mode && capability.layout === layout && capability.playerCounts.includes(playerCount as ConvergencePlayerCount)) ?? null;
+}
+export function mapSupportsMode(mapId: MapId, mode: GameMode): boolean {
+  return MAP_CONFIGS[mapId].capabilities.some(capability => capability.mode === mode);
+}
+export function mapDimensions(mapId: MapId, mode: GameMode): BoardDimensions {
+  const map = MAP_CONFIGS[mapId];
+  return mode === 'convergence' && map.convergence ? { width: map.convergence.width, height: map.convergence.height } : { width: map.width, height: map.height };
+}
+export function isControllerCombinationSupported(capability: MatchCapability, controllers: readonly ControllerType[], online = false): boolean {
+  if (!capability.playerCounts.includes(controllers.length as ConvergencePlayerCount)) return false;
+  if (online) return capability.online && controllers.every(controller => controller === 'HUMAN_REMOTE');
+  if (controllers.some(controller => controller === 'HUMAN_REMOTE')) return false;
+  if (capability.controllerPolicy === 'LOCAL_RUSH_PRIVATE') return controllers.length === 2 && controllers[0] === 'HUMAN_LOCAL' && controllers[1] === 'AI';
+  return controllers.every(controller => controller === 'HUMAN_LOCAL' || controller === 'AI');
+}
+export function unsupportedMapReason(mapId: MapId, mode: GameMode): string | null {
+  if (mapSupportsMode(mapId, mode)) return null;
+  if (mode === 'convergence') return 'No balanced true-center layout';
+  return 'Unsupported by this ruleset';
+}
 
 export type RuleSet = { energyMax: number; energyStart: number; assistStart: number; assistMax: number; breakCost: number; momentumTarget: number };
 export const RULE_SETS: Record<Exclude<GameMode, 'convergence'>, RuleSet> = {

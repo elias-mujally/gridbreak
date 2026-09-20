@@ -5,6 +5,7 @@ dist/
 .wrangler/
 .playwright-cli/
 coverage/
+output/
 *.tsbuildinfo
 *.log
 .env

@@ -40,6 +40,22 @@
 .setup-difficulty { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin-top: 10px; }
 .setup-difficulty button { padding: 10px 6px; border: 1px solid #385269; border-radius: 7px; background: #172b3a; color: #7894a4; text-transform: capitalize; font-weight: 700; cursor: pointer; }
 .setup-difficulty button.chosen { border-color: #8ce7e0; background: #31515e; color: #e8ffff; }
+.map-options button.unsupported { opacity: .46; border-style: dashed; cursor: not-allowed; }
+.map-options button.unsupported span { font-size: 8px; line-height: 1.15; }
+.controller-slots { display: grid; gap: 8px; margin-top: 12px; }
+.controller-slot { display: grid; grid-template-columns: minmax(120px,1fr) auto auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #304b60; border-radius: 9px; background: #122433; }
+.controller-slot > span { display: flex; align-items: center; gap: 9px; }
+.controller-slot > span b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #203b4b; color: #9ff6ef; font-size: 11px; }
+.controller-slot > span small { color: #b4c8d3; font-weight: 700; letter-spacing: .06em; }
+.controller-slot > strong { color: #dffcf8; font-size: 11px; text-transform: uppercase; }
+.controller-choice, .slot-difficulty { display: flex; gap: 4px; }
+.controller-choice button, .slot-difficulty button { border: 1px solid #385269; border-radius: 6px; padding: 7px 9px; background: #172b3a; color: #7894a4; font-size: 10px; font-weight: 700; text-transform: uppercase; cursor: pointer; }
+.controller-choice button.chosen, .slot-difficulty button.chosen { border-color: #8ce7e0; background: #31515e; color: #e8ffff; }
+@media (max-width: 640px) {
+  .controller-slot { grid-template-columns: 1fr auto; }
+  .slot-difficulty { grid-column: 1 / -1; }
+  .slot-difficulty button { flex: 1; }
+}
 .seed-lock { margin-top: 16px; display: flex; align-items: center; gap: 10px; width: fit-content; color: #cfe1e5; cursor: pointer; }
 .seed-lock input { accent-color: #85e2dd; }
 .seed-lock span { display: flex; flex-direction: column; }

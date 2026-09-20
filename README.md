@@ -1,6 +1,6 @@
 # GridBreak
 
-GridBreak is an original path-racing strategy game built with Vite, React, and TypeScript. It supports Classic and Rush against local AI, local Convergence for two to four people sharing one device, and private authoritative online Convergence rooms.
+GridBreak is an original path-racing strategy game built with Vite, React, and TypeScript. It supports Classic against local AI or a friend, Rush against privacy-safe local AI, mixed human/AI Convergence, and private authoritative online Convergence rooms.
 
 ## Run locally
 
@@ -31,10 +31,10 @@ The preview server prints its local URL. Query parameters such as
 `?map=wide&mode=rush&layout=parallel&difficulty=hard&seed=33&aiDebug=1`
 remain available for reproducible QA.
 
-Convergence QA links use `mode=convergence` and `players=2`, `3`, or `4`, for example:
+Convergence QA links use `mode=convergence`, `players=2`, `3`, or `4`, and an optional controller list. Controller values are `human`, `ai-easy`, `ai-normal`, or `ai-hard`:
 
 ```text
-?map=grand&mode=convergence&players=4
+?map=grand&mode=convergence&players=4&controllers=human,human,ai-normal,ai-hard
 ```
 
 ## Deploy to Vercel
@@ -83,14 +83,16 @@ Room metadata reserves `PUBLIC` and `PASSWORD_PROTECTED` visibility values, whil
 
 The setup flow is:
 
-**Mode → Map → Layout or player count → Difficulty when applicable → Start**
+**Mode → Map → Layout → Players → Controllers → Start**
 
 Game mode and map are independent.
 
-- **Classic** uses movement, collision jumps, side-steps, and route-safe walls only.
-- **Rush** adds Energy, Assist, rewards, Break, Phantom Walls, Momentum, and Sudden Death.
-- **Convergence** is a local shared-device center race for two to four human players. Its V1 rules use movement and walls without Rush resources.
+- **Classic** uses movement, collision jumps, side-steps, and route-safe walls. Every compatible map supports Human vs AI and Human vs Human Local.
+- **Rush** adds Energy, Assist, rewards, Break, Phantom Walls, Momentum, and Sudden Death. Local V1 remains Human vs AI because one shared screen cannot keep Phantom identity private from two humans.
+- **Convergence** is a center race for two to four slots. Local slots can be `HUMAN_LOCAL` or `AI` in any mixture; Online V1 assigns every slot `HUMAN_REMOTE`.
 - Classic and Rush use the same map dimensions, wall inventory, spawn zones, and goal zones.
+
+Map availability comes from `MapConfig.capabilities`, rather than an AI, local, or online map list. Each capability declares its mode, layout, player counts, geometry variant, controller policy, and Online V1 compatibility. The setup shows all six map identities and disables unsupported center geometries with a reason.
 
 ## Shared maps
 
@@ -140,8 +142,16 @@ Convergence uses configuration-owned dimensions, player counts, spawn points, on
 - Four players start North, East, South, and West.
 - Every Convergence board must have odd width and height. Configuration construction rejects even dimensions.
 - The only winning destination is the cell at `floor(width / 2), floor(height / 2)`.
-- Every player is a `HUMAN_LOCAL` controller in V1.
+- Local player slots may be `HUMAN_LOCAL` or `AI`. Each AI slot stores its own Easy, Normal, or Hard difficulty.
 - A wall is accepted only when BFS still finds a route from every active pawn to that single center cell.
+
+### Convergence AI
+
+Convergence uses a dedicated N-player policy instead of the two-player Rush evaluator. It scores its own center distance, every opponent's distance, the nearest winning threat, turn order, wall effects on all players, self-route damage, accidental help to other opponents, and wall reserves. Candidate actions are ordinary serialized `MOVE` or `PLACE_WALL` actions and are accepted only through the same `applyAction` validation used by humans.
+
+- **Easy:** usually follows its shortest route and only occasionally uses a useful wall.
+- **Normal:** recognizes the current leader and balances progress with defensive walls.
+- **Hard:** evaluates all active opponents and will give up immediate progress to stop a one-turn center threat.
 
 The first collision pawn may be jumped when the cell behind it is open. When that cell is blocked by a wall, board edge, or another pawn, the mover receives open side-step destinations around the first pawn. Chained jumps over multiple pawns are intentionally excluded because they become ambiguous in clusters.
 
@@ -217,7 +227,7 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 
 ## Architecture
 
-- `src/game/modes.ts` — shared `MapConfig`, `SpawnZone`, `GoalZone`, and layout configuration
+- `src/game/modes.ts` — one shared map catalog, geometry variants, `MatchCapability`, spawns, goals, and layouts
 - `src/game/state.ts` — serializable player/controller model, turn order, match state, seeds, and rematches
 - `src/game/movement.ts` — orthogonal N-player collision rules and two-player Rush Assist paths
 - `src/game/pathfinding.ts` — BFS to configured goal zones and points
@@ -227,9 +237,10 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 - `src/game/view.ts` — player-specific hidden-information projection
 - `src/game/ai.ts` — Classic policy and AI dispatch
 - `src/game/aiRush.ts` — tactical Rush candidate generation, scoring, and explanation
-- `src/ui/ModePicker.tsx` — mode, map, layout, difficulty, and seed setup
+- `src/game/aiConvergence.ts` — N-player center-race threat and wall evaluation
+- `src/ui/ModePicker.tsx` — capability-driven mode, map, layout, player, and controller setup
 - `src/ui/App.tsx` — responsive rendering and validated input dispatch
-- `src/ui/ConvergenceMatch.tsx` — local shared-device N-player board and turn presentation
+- `src/ui/ConvergenceMatch.tsx` — shared local/online N-player board and turn presentation
 
 ## N-player foundation
 
@@ -237,25 +248,18 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 
 - `HUMAN_LOCAL`
 - `AI`
-- `HUMAN_REMOTE` as a future architecture value only
+- `HUMAN_REMOTE` for server-authoritative Online V1 seats
 
-Classic and Rush retain two-player compatibility projections while their proven AI and resource rules remain specialized. Shared movement, victory, turn advancement, wall validation, goals, and rendering read the active player model.
+Classic and Rush retain two-player compatibility projections while their proven AI and resource rules remain specialized. Shared movement, victory, turn advancement, wall validation, goals, and rendering read the active player model. `PlayerState` also owns its controller-specific AI difficulty; rematches preserve controller assignments.
 
-## Work required before Online Multiplayer
+## Online support and intentionally deferred work
 
-Networking is intentionally absent. A future authoritative implementation still needs:
+Online V1 is implemented for private Convergence rooms with Cloudflare Workers, Durable Objects, and WebSockets. It includes guest sessions, room codes, Ready/start validation, server-owned state, expected sequences, idempotent action IDs, reconnect snapshots, server-declared victory, and unanimous rematch voting.
 
-1. room and membership state with private room codes;
-2. authenticated or guest remote identities mapped to `HUMAN_REMOTE` controllers;
-3. a server-owned canonical `GameState` and action sequence number;
-4. validation of serialized `move` and `wall` actions on the server using this pure engine;
-5. action acknowledgement, ordering, duplicate rejection, and client reconciliation;
-6. reconnect snapshots plus resumable turn timers;
-7. room lifecycle, disconnect, surrender, and abandoned-match policies;
-8. versioned replay/event storage and compatibility migrations.
+Online Classic, Online Rush, and server-owned bots are deferred. Online Rush also requires private per-player projections throughout the network protocol. Online bots would require the Durable Object to schedule AI turns after accepted actions and reconnect restoration, run the shared policy on authoritative state, submit the resulting action through the same room validator, and broadcast the incremented sequence without depending on a connected browser.
 
-The current action and state shapes are JSON serializable, but no transport, persistence, authentication, or server authority is included.
+Accounts, matchmaking, public/password rooms, rankings, history, chat, spectators, and monetization remain deferred.
 
 ## Current scope
 
-The project has no accounts, backend, online multiplayer, ads, purchases, rankings, cosmetics, sound, Phaser dependency, or Phase 3 features.
+The current product includes an authoritative Online V1 backend only for private Convergence rooms. It has no accounts, matchmaking, ranked play, ads, purchases, cosmetics, sound system, Phaser dependency, or unrelated Phase 3 features.

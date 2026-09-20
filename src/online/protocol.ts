@@ -1,6 +1,6 @@
 import type { GameState, PlayerId } from '../game/state';
 import type { Action } from '../game/state';
-import type { ConvergencePlayerCount, MapId } from '../game/modes';
+import { MAP_CONFIGS, matchCapability, type ConvergencePlayerCount, type MapId } from '../game/modes';
 
 export const PROTOCOL_VERSION = 1 as const;
 export const GAME_BUILD_VERSION = 'convergence-online-v1' as const;
@@ -132,8 +132,9 @@ export function validateCreateRoomRequest(value: unknown): ValidationResult<Crea
   if (!version.ok) return version;
   const displayName = validateDisplayName(value.displayName);
   if (!displayName.ok) return displayName;
-  if (!['arena', 'grand', 'titan'].includes(String(value.mapId)) || ![2, 3, 4].includes(Number(value.playerCount))) return { ok: false, code: 'INVALID_REQUEST', message: 'Unsupported Convergence setup.' };
-  if (value.mapId === 'arena' && value.playerCount !== 2) return { ok: false, code: 'INVALID_REQUEST', message: 'Arena supports two online players.' };
+  if (!(String(value.mapId) in MAP_CONFIGS) || ![2, 3, 4].includes(Number(value.playerCount))) return { ok: false, code: 'INVALID_REQUEST', message: 'Unsupported Convergence setup.' };
+  const capability = matchCapability(value.mapId as MapId, 'convergence', 'convergence', value.playerCount as ConvergencePlayerCount);
+  if (!capability?.online) return { ok: false, code: 'INVALID_REQUEST', message: 'This map and player count is unavailable in Online V1.' };
   return { ok: true, value: { protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, displayName: displayName.value, mapId: value.mapId as MapId, playerCount: value.playerCount as ConvergencePlayerCount } };
 }
 
