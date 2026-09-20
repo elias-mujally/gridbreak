@@ -1,0 +1,31 @@
+.mobile-toolbar { display: none; }
+
+@media (max-width: 760px) {
+  .mobile-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin: -2px 0 10px;
+  }
+
+  .mobile-toolbar button {
+    min-width: 0;
+    min-height: 44px;
+    border: 1px solid #3c596a;
+    border-radius: 8px;
+    background: #182b3b;
+    color: #97b5c0;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .mobile-toolbar button span { margin-left: 4px; font-size: 11px; }
+  .mobile-toolbar button.selected {
+    color: #bdf5ef;
+    border-color: #80dbda;
+    background: #244553;
+  }
+  .mobile-toolbar button:disabled { opacity: .45; cursor: default; }
+  .actions-group { display: none; }
+}
