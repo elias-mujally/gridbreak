@@ -36,6 +36,13 @@ export type MatchCapability = {
   controllerPolicy: ControllerPolicy;
   online: boolean;
 };
+export type MatchConfiguration = {
+  mode: GameMode;
+  mapId: MapId;
+  layout: RaceLayout;
+  playerCount: ConvergencePlayerCount;
+  controllers: ControllerType[];
+};
 export type MapConfig = BoardDimensions & {
   id: MapId;
   name: string;
@@ -136,9 +143,9 @@ function defineMap(definition: MapDefinition): MapConfig {
   const { onlineConvergence = false, ...map } = definition;
   const raceLayouts = (Object.keys(map.layouts) as LegacyRaceLayout[]).filter(layout => !!map.layouts[layout]);
   const capabilities: MatchCapability[] = raceLayouts.flatMap(layout => [
-    { mode: 'classic', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_OPEN', online: false },
+    { mode: 'classic', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_OPEN', online: true },
     // A shared screen cannot keep Phantom Walls private, so Rush is intentionally Human vs AI only.
-    { mode: 'rush', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_RUSH_PRIVATE', online: false },
+    { mode: 'rush', layout, playerCounts: [2], geometry: 'race', controllerPolicy: 'LOCAL_RUSH_PRIVATE', online: true },
   ]);
   if (map.convergence) capabilities.push({
     mode: 'convergence', layout: 'convergence', playerCounts: [...map.convergence.supportedPlayerCounts],
@@ -176,6 +183,14 @@ export function isControllerCombinationSupported(capability: MatchCapability, co
   if (controllers.some(controller => controller === 'HUMAN_REMOTE')) return false;
   if (capability.controllerPolicy === 'LOCAL_RUSH_PRIVATE') return controllers.length === 2 && controllers[0] === 'HUMAN_LOCAL' && controllers[1] === 'AI';
   return controllers.every(controller => controller === 'HUMAN_LOCAL' || controller === 'AI');
+}
+export function resolveMatchCapability(configuration: MatchConfiguration, online = false): MatchCapability | null {
+  const capability = matchCapability(configuration.mapId, configuration.mode, configuration.layout, configuration.playerCount);
+  if (!capability || !isControllerCombinationSupported(capability, configuration.controllers, online)) return null;
+  return capability;
+}
+export function onlineMatchConfiguration(mode: GameMode, mapId: MapId, layout: RaceLayout, playerCount: ConvergencePlayerCount): MatchConfiguration {
+  return { mode, mapId, layout, playerCount, controllers: Array.from({ length: playerCount }, () => 'HUMAN_REMOTE') };
 }
 export function unsupportedMapReason(mapId: MapId, mode: GameMode): string | null {
   if (mapSupportsMode(mapId, mode)) return null;

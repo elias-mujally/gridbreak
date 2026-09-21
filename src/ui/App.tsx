@@ -6,7 +6,7 @@ import { routeLength } from '../game/pathfinding';
 import { Action, Difficulty, GameState, NewGameOptions, Player, Point, Wall, activePlayerStates, currentPlayerId, newGame, rematchGame, samePoint } from '../game/state';
 import { isLegalWall, wallKey } from '../game/walls';
 import { canPlaceViewedWall, perceivedMovementBoard, probeTargets, viewForPlayer } from '../game/view';
-import { MAP_CONFIGS, RULE_SETS, ConvergencePlayerCount, RaceLayout, goalLabel, pointInGoal } from '../game/modes';
+import { MAP_CONFIGS, RULE_SETS, ConvergencePlayerCount, RaceLayout, goalLabel, pointInGoal, type MatchConfiguration } from '../game/modes';
 import ModePicker from './ModePicker';
 import ConvergenceMatch from './ConvergenceMatch';
 import OnlineApp from './OnlineApp';
@@ -97,7 +97,7 @@ export default function App() {
   const [flash, setFlash] = useState<Flash | null>(null);
   const [boardZoom, setBoardZoom] = useState(false);
   const [aiExplanation, setAIExplanation] = useState('');
-  const [online, setOnline] = useState(false);
+  const [online, setOnline] = useState<MatchConfiguration | 'join' | null>(null);
   const debugAI = useMemo(() => new URLSearchParams(window.location.search).get('aiDebug') === '1', []);
   const view = useMemo(() => viewForPlayer(game, 'blue'), [game]);
   const board = useMemo(() => perceivedMovementBoard(view), [view]);
@@ -180,8 +180,8 @@ export default function App() {
   }
   function selectWall(orientation: Wall['orientation']) { setMode(isPhantomMode(mode) ? `phantom-${orientation}` : orientation); setHover(null); }
   function selectPhantom() { setMode(isPhantomMode(mode) ? wallOrientation(mode) : `phantom-${wallOrientation(mode)}`); setHover(null); }
-  if (online) return <OnlineApp onExit={() => setOnline(false)} />;
-  if (!started) return <ModePicker onStart={startMatch} onOnline={() => setOnline(true)} />;
+  if (online) return <OnlineApp onExit={() => setOnline(null)} initialConfiguration={online === 'join' ? undefined : online} />;
+  if (!started) return <ModePicker onStart={startMatch} onOnline={configuration => setOnline(configuration ?? 'join')} />;
   if (game.mode === 'convergence') return <ConvergenceMatch game={game} pending={thinking} onAction={action => { const actor = activePlayerStates(game).find(player => player.id === currentPlayerId(game)); if (actor?.controller !== 'HUMAN_LOCAL') return false; const next = applyAction(game, action); if (!next) return false; setGame(next); return true; }} onRematch={rematch} onMainMenu={() => setStarted(false)} />;
 
   const goalMarks = Array.from({ length: Math.min(game.width, 12) });

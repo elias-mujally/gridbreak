@@ -23,6 +23,12 @@
 .online-form label { display: block; margin-top: 16px; color: #7ea0ae; font: 700 9px 'Space Grotesk',sans-serif; letter-spacing: 1.2px; }
 .online-form input { display: block; width: 100%; margin-top: 8px; padding: 13px 14px; border: 1px solid #405e72; border-radius: 9px; outline: 0; background: #172c3b; color: #f0f8fa; font: 600 14px 'DM Sans',sans-serif; }
 .online-form input:focus { border-color: #8de9e0; box-shadow: 0 0 0 3px #70e5da16; }
+.online-selected-config { margin-top: 20px; padding: 16px; display: flex; flex-direction: column; gap: 5px; border: 1px solid #65a8a5; border-radius: 10px; background: linear-gradient(120deg,#193947,#1b2e40); }
+.online-selected-config small { color: #75a8b0; font: 700 8px 'Space Grotesk',sans-serif; letter-spacing: 1.2px; }
+.online-selected-config strong { color: #a6f4ed; font: 700 14px 'Space Grotesk',sans-serif; }
+.online-selected-config span { color: #7f9ba8; font-size: 10px; }
+.play-with-options button:disabled { opacity: .42; cursor: not-allowed; }
+.online-race-match .intro-panel .how-to p { margin: 7px 0 0; }
 .online-choice-label { margin-top: 22px; color: #7ea0ae; font: 700 9px 'Space Grotesk',sans-serif; letter-spacing: 1.2px; }
 .online-map-options,.online-count-options { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 9px; }
 .online-map-options button,.online-count-options button { min-height: 58px; border: 1px solid #3a576b; border-radius: 8px; background: #172c3b; color: #dce9ec; cursor: pointer; }

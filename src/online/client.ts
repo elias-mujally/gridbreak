@@ -1,10 +1,11 @@
 import type { Action } from '../game/state';
+import type { MatchConfiguration } from '../game/modes';
 import {
   GAME_BUILD_VERSION, PROTOCOL_VERSION, type ClientCommand, type OnlineErrorCode,
   type PublicRoomState, type RoomAdmission, type ServerEvent, type SessionCredentials,
 } from './protocol';
 
-const STORAGE_KEY = 'gridbreak.online.session.v1';
+const STORAGE_KEY = 'gridbreak.online.session.v2';
 const configuredEndpoint = import.meta.env.VITE_ONLINE_SERVER_URL?.replace(/\/$/, '');
 export const ONLINE_SERVER_URL = configuredEndpoint || (import.meta.env.DEV ? 'http://127.0.0.1:8787' : '');
 
@@ -25,8 +26,8 @@ async function request<T>(path: string, body: unknown): Promise<T> {
   return result;
 }
 
-export async function createOnlineRoom(displayName: string, mapId: string, playerCount: number): Promise<RoomAdmission> {
-  return request('/api/rooms', { protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, displayName, mapId, playerCount });
+export async function createOnlineRoom(displayName: string, configuration: MatchConfiguration): Promise<RoomAdmission> {
+  return request('/api/rooms', { protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, displayName, configuration });
 }
 
 export async function joinOnlineRoom(displayName: string, roomCode: string): Promise<RoomAdmission> {
@@ -83,7 +84,7 @@ export class OnlineConnection {
 
   sendReady(ready: boolean) { return this.send('READY', { ready }); }
   sendStart() { return this.send('START'); }
-  sendGameAction(action: Extract<Action, { type: 'move' | 'wall' }>) { return this.send('GAME_ACTION', { action }); }
+  sendGameAction(action: Action) { return this.send('GAME_ACTION', { action }); }
   sendRematch(accept = true) { return this.send('REMATCH_VOTE', { accept }); }
 
   private send(type: ClientCommand['type'], extra: Record<string, unknown> = {}): boolean {

@@ -1,6 +1,6 @@
 # GridBreak
 
-GridBreak is an original path-racing strategy game built with Vite, React, and TypeScript. It supports Classic against local AI or a friend, Rush against privacy-safe local AI, mixed human/AI Convergence, and private authoritative online Convergence rooms.
+GridBreak is an original path-racing strategy game built with Vite, React, and TypeScript. Classic, Rush, and Convergence share one capability-driven match architecture and can be played with the compatible local, AI, or online controllers described below.
 
 ## Run locally
 
@@ -58,7 +58,7 @@ Set the Vercel production environment variable `VITE_ONLINE_SERVER_URL` to the d
 
 ## Online server
 
-Online V1 uses one Cloudflare Durable Object per private room. The Worker owns room admission and WebSocket transport; the Durable Object owns the lobby, authoritative game state, sequence, reconnect metadata, action history, and expiry alarm. Rendering and browser APIs remain outside the shared deterministic engine.
+Online Modes V2 uses one Cloudflare Durable Object per private room. Online is a controller and transport choice for a normal Classic, Rush, or Convergence match. The Worker owns room admission and WebSocket transport; the Durable Object owns the lobby, complete authoritative state, sequence, reconnect metadata, action history, and expiry alarm. It executes the same deterministic engine as local play.
 
 ```bash
 npm run worker:typecheck
@@ -72,27 +72,46 @@ npm run worker:deploy
 
 - Rooms are unlisted and use a case-insensitive `GB-XXXX` code that excludes ambiguous characters.
 - A guest receives a random session ID and 256-bit session token. The browser stores that temporary reconnect credential locally; Durable Object storage keeps only its SHA-256 hash.
-- Lobby actions and game intents use protocol version 1, a build compatibility value, unique action IDs, and the expected authoritative sequence.
-- The server accepts only `MOVE` and `PLACE_WALL` game intents and validates identity, turn ownership, collision, walls, route preservation, and victory with the shared engine.
+- Lobby actions and game intents use protocol version 2, build compatibility value `online-modes-v2`, unique action IDs, and the expected authoritative sequence.
+- Room metadata carries a validated `MatchConfiguration`: mode, map, layout, player count, and remote controller expectations. Joining guests receive this configuration from the room rather than choosing a conflicting setup.
+- The server accepts `MOVE` and `PLACE_WALL` for Classic and Convergence. Rush additionally accepts `ASSIST`, `BREAK`, `PHANTOM`, and `PROBE`. Identity, mode, turn ownership, resources, collisions, walls, route preservation, rewards, victory, and deadline state are validated by the shared engine.
 - A disconnected seat is retained for five minutes and turns are never skipped. A playing room with no connected players becomes abandoned after 30 minutes. Any room expires after 24 hours without activity.
-- Rematches require every connected room member to vote. Membership, map, and player count are retained while a clean authoritative game is created.
+- Rematches require every connected room member to vote. Membership and match configuration are retained while a clean authoritative game is created; Rush receives a fresh server-generated seed.
 
-Room metadata reserves `PUBLIC` and `PASSWORD_PROTECTED` visibility values, while Online V1 creates only `UNLISTED` rooms. Future accounts can replace the guest identity provider without changing `PlayerState` or the game rules.
+### Phantom privacy
+
+The Durable Object stores the complete Rush state, including Phantom identity. It never broadcasts that state. Every authenticated socket receives a `GameView` generated specifically for its assigned player:
+
+- the owner sees their own Phantom as `knownPhantom: true` and receives their own remaining Phantom availability;
+- the opponent sees the same barrier shape and owner metadata as an ordinary wall with `knownPhantom: false`;
+- the opponent never receives the authoritative `phantoms` collection, the opponent's availability map, or private placement event text;
+- reconnect, rematch voting, and finished-match snapshots use the same projection;
+- wall serialization is geometry-sorted so real-first/Phantom-last array ordering cannot disclose identity.
+
+Session IDs, token hashes, and reconnect tokens are also absent from public room snapshots.
+
+Room metadata reserves `PUBLIC` and `PASSWORD_PROTECTED` visibility values, while Online V2 creates only `UNLISTED` rooms. Future accounts can replace the guest identity provider without changing `PlayerState` or the game rules.
 
 ## Setup model
 
 The setup flow is:
 
-**Mode → Map → Layout → Players → Controllers → Start**
+**Mode → Map → Layout → Play With → Match Setup**
 
 Game mode and map are independent.
 
-- **Classic** uses movement, collision jumps, side-steps, and route-safe walls. Every compatible map supports Human vs AI and Human vs Human Local.
-- **Rush** adds Energy, Assist, rewards, Break, Phantom Walls, Momentum, and Sudden Death. Local V1 remains Human vs AI because one shared screen cannot keep Phantom identity private from two humans.
-- **Convergence** is a center race for two to four slots. Local slots can be `HUMAN_LOCAL` or `AI` in any mixture; Online V1 assigns every slot `HUMAN_REMOTE`.
+- **Classic** uses movement, collision jumps, side-steps, and route-safe walls. Every compatible map supports AI, shared-device Human, and Online Human play.
+- **Rush** adds Energy, Assist, rewards, Break, Phantom Walls, Momentum, and Sudden Death. It supports local AI and Online Human play. Shared-device Human vs Human stays unavailable because one screen cannot keep Phantom identity private.
+- **Convergence** is a center race for two to four slots. Local slots can be `HUMAN_LOCAL` or `AI` in any mixture, while online rooms assign every slot `HUMAN_REMOTE`.
 - Classic and Rush use the same map dimensions, wall inventory, spawn zones, and goal zones.
 
-Map availability comes from `MapConfig.capabilities`, rather than an AI, local, or online map list. Each capability declares its mode, layout, player counts, geometry variant, controller policy, and Online V1 compatibility. The setup shows all six map identities and disables unsupported center geometries with a reason.
+Map availability comes from `MapConfig.capabilities`, rather than separate AI, local, or online map lists. Each capability declares its mode, layout, player counts, geometry variant, controller policy, and online compatibility. The setup shows all six map identities and disables unsupported center geometries with a reason.
+
+| Mode | AI | Local Human | Online Human |
+|---|---|---|---|
+| Classic | Yes | Yes | Yes |
+| Rush | Yes | No — Phantom privacy | Yes |
+| Convergence | Yes | Yes | Yes |
 
 ## Shared maps
 
@@ -238,9 +257,13 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 - `src/game/ai.ts` — Classic policy and AI dispatch
 - `src/game/aiRush.ts` — tactical Rush candidate generation, scoring, and explanation
 - `src/game/aiConvergence.ts` — N-player center-race threat and wall evaluation
-- `src/ui/ModePicker.tsx` — capability-driven mode, map, layout, player, and controller setup
+- `src/online/protocol.ts` — versioned room configuration, action schemas, limits, and projected public types
+- `src/online/room.ts` — lobby lifecycle, server authority, persistence, sequencing, rematch, and per-player snapshots
+- `worker/index.ts` — HTTP admission, Durable Object WebSockets, individualized broadcasts, and alarms
+- `src/ui/ModePicker.tsx` — capability-driven mode, map, layout, Play With, and controller setup
 - `src/ui/App.tsx` — responsive rendering and validated input dispatch
 - `src/ui/ConvergenceMatch.tsx` — shared local/online N-player board and turn presentation
+- `src/ui/OnlineRaceMatch.tsx` — projected Classic/Rush remote board and Rush abilities
 
 ## N-player foundation
 
@@ -248,18 +271,18 @@ The panel reports the selected action, score, own-route effect, opponent-route e
 
 - `HUMAN_LOCAL`
 - `AI`
-- `HUMAN_REMOTE` for server-authoritative Online V1 seats
+- `HUMAN_REMOTE` for server-authoritative Online V2 seats
 
 Classic and Rush retain two-player compatibility projections while their proven AI and resource rules remain specialized. Shared movement, victory, turn advancement, wall validation, goals, and rendering read the active player model. `PlayerState` also owns its controller-specific AI difficulty; rematches preserve controller assignments.
 
 ## Online support and intentionally deferred work
 
-Online V1 is implemented for private Convergence rooms with Cloudflare Workers, Durable Objects, and WebSockets. It includes guest sessions, room codes, Ready/start validation, server-owned state, expected sequences, idempotent action IDs, reconnect snapshots, server-declared victory, and unanimous rematch voting.
+Private rooms support Classic on all six race maps, including Wide Parallel and Gauntlet Parallel; Rush on every compatible race map/layout; and Convergence on Arena, Grand, and Titan for their configured player counts. Guest sessions, Ready/start validation, server-owned state, expected sequences, idempotent action IDs, reconnect projections, server-declared victory, and unanimous rematch voting apply to every mode.
 
-Online Classic, Online Rush, and server-owned bots are deferred. Online Rush also requires private per-player projections throughout the network protocol. Online bots would require the Durable Object to schedule AI turns after accepted actions and reconnect restoration, run the shared policy on authoritative state, submit the resulting action through the same room validator, and broadcast the incremented sequence without depending on a connected browser.
+Online bots remain deferred. They require the Durable Object to schedule AI turns after accepted actions and reconnect restoration, run the shared policy on authoritative state, submit the result through the same room validator, and broadcast a new sequence without depending on a connected browser.
 
 Accounts, matchmaking, public/password rooms, rankings, history, chat, spectators, and monetization remain deferred.
 
 ## Current scope
 
-The current product includes an authoritative Online V1 backend only for private Convergence rooms. It has no accounts, matchmaking, ranked play, ads, purchases, cosmetics, sound system, Phaser dependency, or unrelated Phase 3 features.
+The current product includes authoritative private rooms for Classic, Rush, and Convergence. It has no accounts, matchmaking, ranked play, online bots, ads, purchases, cosmetics, sound system, Phaser dependency, or unrelated Phase 3 features.

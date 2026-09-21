@@ -4,10 +4,11 @@ import { legalMoves } from '../game/movement';
 import { Action, GameState, Point, Wall, activePlayerStates, currentPlayerId, samePoint, type PlayerId } from '../game/state';
 import { isLegalWall, wallKey } from '../game/walls';
 import { MAP_CONFIGS, pointInGoal } from '../game/modes';
+import type { GameView } from '../game/view';
 
 type PlacementMode = 'move' | 'horizontal' | 'vertical';
 type Props = {
-  game: GameState;
+  game: GameState | GameView;
   onAction: (action: Action) => boolean;
   onRematch: () => void;
   onMainMenu: () => void;
@@ -35,10 +36,10 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
   const [mode, setMode] = useState<PlacementMode>('move');
   const [hover, setHover] = useState<Wall | null>(null);
   const [boardZoom, setBoardZoom] = useState(false);
-  const players = useMemo(() => activePlayerStates(game), [game]);
+  const players = useMemo(() => activePlayerStates(game as GameState), [game]);
   const activeId = currentPlayerId(game);
   const active = players.find(player => player.id === activeId)!;
-  const moves = useMemo(() => legalMoves(game, activeId), [game, activeId]);
+  const moves = useMemo(() => legalMoves(game as GameState, activeId), [game, activeId]);
   const coords = useMemo(() => Array.from({ length: game.width * game.height }, (_, index) => ({ row: Math.floor(index / game.width), col: index % game.width })), [game.width, game.height]);
   const anchors = useMemo(() => Array.from({ length: (game.width - 1) * (game.height - 1) }, (_, index) => ({ row: Math.floor(index / (game.width - 1)), col: index % (game.width - 1) })), [game.width, game.height]);
   const boardWidth = game.width * 100 - 12;
@@ -47,8 +48,8 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
   const gridStyle = { gridTemplateColumns: `repeat(${game.width},minmax(0,1fr))`, gridTemplateRows: `repeat(${game.height},minmax(0,1fr))`, columnGap: `${12 / boardWidth * 100}%`, rowGap: `${12 / boardHeight * 100}%` } as CSSProperties;
   const denseBoard = Math.max(game.width, game.height) >= 15;
   const placementMode = mode !== 'move';
-  const canAct = !game.winner && !pending && active.controller === 'HUMAN_LOCAL' && (!localPlayerId || activeId === localPlayerId);
-  const hoverLegal = hover ? isLegalWall(game, hover, activeId) : false;
+  const canAct = !game.winner && !pending && (online ? !!localPlayerId && activeId === localPlayerId : active.controller === 'HUMAN_LOCAL');
+  const hoverLegal = hover ? isLegalWall(game as GameState, hover, activeId) : false;
   const map = MAP_CONFIGS[game.mapId];
 
   function play(action: Action) {
@@ -105,7 +106,7 @@ export default function ConvergenceMatch({ game, onAction, onRematch, onMainMenu
                 {placementMode && hover ? <rect className={`wall-preview ${hoverLegal ? 'allowed' : 'denied'}`} {...wallRect(hover)} rx="6" /> : null}
                 {placementMode && canAct ? anchors.map(anchor => {
                   const wall: Wall = { ...anchor, orientation: mode };
-                  const legal = isLegalWall(game, wall, activeId);
+                  const legal = isLegalWall(game as GameState, wall, activeId);
                   const x = anchor.col * 100 + 94;
                   const y = anchor.row * 100 + 94;
                   return <g key={`${anchor.row}-${anchor.col}`} className={`anchor ${legal ? 'available' : 'unavailable'}`} role="button" aria-label={`${mode} wall at ${labelPoint(anchor)}${legal ? '' : ', unavailable'}`} tabIndex={legal ? 0 : -1} onPointerEnter={() => setHover(wall)} onPointerLeave={() => setHover(null)} onClick={() => play({ type: 'wall', wall })} onKeyDown={event => { if (legal && (event.key === 'Enter' || event.key === ' ')) play({ type: 'wall', wall }); }}><rect className="anchor-hit" x={x - 35} y={y - 35} width="70" height="70" /><circle cx={x} cy={y} r={legal ? 6 : 3} /></g>;

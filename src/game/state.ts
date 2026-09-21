@@ -77,7 +77,7 @@ function playerState(id: PlayerId, number: number, spawn: Point, goal: GoalZone,
   };
 }
 
-export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean; playerCount?: ConvergencePlayerCount; controllers?: ControllerSelection[] };
+export type NewGameOptions = { mode?: GameMode; mapId?: MapId; layout?: RaceLayout; seed?: number; seedLocked?: boolean; playerCount?: ConvergencePlayerCount; controllers?: ControllerSelection[]; online?: boolean };
 export function newGame(options: NewGameOptions = {}): GameState {
   const mode = options.mode ?? 'classic';
   if (mode === 'convergence') {
@@ -87,7 +87,7 @@ export function newGame(options: NewGameOptions = {}): GameState {
     const capability = matchCapability(requestedMap.id, mode, 'convergence', requestedCount);
     if (!capability) throw new Error(`${requestedMap.name} does not support ${requestedCount}-player Convergence.`);
     const selections: ControllerSelection[] = options.controllers ?? Array.from({ length: requestedCount }, () => ({ type: 'HUMAN_LOCAL' as const }));
-    if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type))) throw new Error('Unsupported controller combination for this match.');
+    if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type), options.online === true)) throw new Error('Unsupported controller combination for this match.');
     const map = requestedMap;
     const setup = convergenceSetup(map, requestedCount)!;
     const players = setup.turnOrder.map((id, index) => {
@@ -112,7 +112,7 @@ export function newGame(options: NewGameOptions = {}): GameState {
   const capability = matchCapability(map.id, mode, chosenLayout, 2);
   if (!capability) throw new Error(`${map.name} does not support ${mode} with ${chosenLayout}.`);
   const selections: ControllerSelection[] = options.controllers ?? [{ type: 'HUMAN_LOCAL' as const }, { type: 'AI' as const }];
-  if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type))) throw new Error('Unsupported controller combination for this match.');
+  if (!isControllerCombinationSupported(capability, selections.map(selection => selection.type), options.online === true)) throw new Error('Unsupported controller combination for this match.');
   const race = layoutConfig(map, chosenLayout);
   const seedLocked = mode === 'rush' && options.seedLocked === true;
   const seed = mode === 'rush' ? ((options.seed ?? freshSeed()) >>> 0) : 0;
