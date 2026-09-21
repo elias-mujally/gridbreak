@@ -53,7 +53,12 @@ function directMove(game) {
   else if (goal.edge === 'top') row--; else if (goal.edge === 'bottom') row++; else if (goal.edge === 'left') col--; else col++;
   return { type: 'move', to: { row, col } };
 }
-async function openMatch(configuration) { const admissions = await admissionSet(configuration); const clients = []; for (const admission of admissions) clients.push(await new Client(admission).connect()); await readyAndStart(clients); return clients; }
+async function openMatch(configuration) {
+  const admissions = await admissionSet(configuration); const clients = [];
+  for (const admission of admissions) clients.push(await new Client(admission).connect());
+  await synchronize(clients, Math.max(...clients.map(client => client.room.sequence)));
+  await readyAndStart(clients); return clients;
+}
 
 async function runClassic(configuration) {
   const clients = await openMatch(configuration); const wrong = clients.find(client => client !== currentClient(clients)); const rejected = await wrong.command('GAME_ACTION', { action: directMove(wrong.room.game) }); assert.equal(rejected.event.code, 'NOT_YOUR_TURN');
