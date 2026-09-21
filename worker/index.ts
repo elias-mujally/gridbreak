@@ -111,7 +111,7 @@ export class RoomDurableObject extends DurableObject<Env> {
     const result = this.room.command(attachment.sessionId, message, Date.now());
     await this.persist();
     if (!result.accepted) { this.send(ws, rejection(result.code, result.message, result.sequence, message.actionId)); return; }
-    this.broadcastSnapshots(Date.now());
+    this.broadcastSnapshots(Date.now(), { sessionId: attachment.sessionId, actionId: message.actionId });
   }
 
   async webSocketClose(ws: WebSocket) { await this.handleDisconnect(ws); }
@@ -166,13 +166,13 @@ export class RoomDurableObject extends DurableObject<Env> {
     if (attachment.violations >= 3) ws.close(4400, 'Too many invalid messages');
   }
   private send(ws: WebSocket, event: ServerEvent) { try { ws.send(JSON.stringify(event)); } catch { /* socket already closed */ } }
-  private broadcastSnapshots(now: number) {
+  private broadcastSnapshots(now: number, acknowledgement?: { sessionId: string; actionId: string }) {
     if (!this.room) return;
     for (const socket of this.ctx.getWebSockets()) {
       const sessionId = (socket.deserializeAttachment() as SocketAttachment | null)?.sessionId;
       if (!sessionId) continue;
       const room = this.room.snapshot(sessionId, now);
-      this.send(socket, { type: 'SNAPSHOT', protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, sequence: room.sequence, room });
+      this.send(socket, { type: 'SNAPSHOT', protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, sequence: room.sequence, ...(acknowledgement?.sessionId === sessionId ? { actionId: acknowledgement.actionId } : {}), room });
     }
   }
   private async persist() {

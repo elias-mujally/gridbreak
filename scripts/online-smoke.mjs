@@ -27,7 +27,7 @@ class Client {
     return new Promise((resolve, reject) => { const waiter = { predicate, resolve: event => { clearTimeout(timer); resolve(event); } }; const timer = setTimeout(() => { this.waiters = this.waiters.filter(item => item !== waiter); reject(new Error('Timed out waiting for WebSocket event')); }, timeout); this.waiters.push(waiter); });
   }
   envelope(type, extra = {}, options = {}) { return { type, protocolVersion, buildVersion, roomCode: this.room.code, sessionId: this.admission.credentials.sessionId, actionId: options.actionId ?? crypto.randomUUID(), expectedSequence: options.expectedSequence ?? this.room.sequence, ...extra }; }
-  async command(type, extra = {}, options = {}) { const envelope = this.envelope(type, extra, options); const previous = this.room.sequence; this.socket.send(JSON.stringify(envelope)); const event = await this.waitFor(item => (item.type === 'SNAPSHOT' && item.sequence > previous) || (item.type === 'ACTION_REJECTED' && item.actionId === envelope.actionId)); return { envelope, event }; }
+  async command(type, extra = {}, options = {}) { const envelope = this.envelope(type, extra, options); this.socket.send(JSON.stringify(envelope)); const event = await this.waitFor(item => (item.type === 'SNAPSHOT' && item.actionId === envelope.actionId) || (item.type === 'ACTION_REJECTED' && item.actionId === envelope.actionId)); return { envelope, event }; }
   close() { this.socket?.close(1000, 'smoke close'); }
 }
 
@@ -43,8 +43,8 @@ async function synchronize(clients, minimumSequence) {
   assert.equal(new Set(positions).size, 1, 'public authoritative positions diverged');
 }
 async function readyAndStart(clients) {
-  for (const client of clients) { const { event } = await client.command('READY', { ready: true }); assert.equal(event.type, 'SNAPSHOT'); await synchronize(clients, event.sequence); }
-  const { event } = await clients[0].command('START'); assert.equal(event.type, 'SNAPSHOT'); assert.equal(event.room.phase, 'playing'); await synchronize(clients, event.sequence);
+  for (const client of clients) { const { event } = await client.command('READY', { ready: true }); assert.equal(event.type, 'SNAPSHOT', JSON.stringify(event)); await synchronize(clients, event.sequence); }
+  const { event } = await clients[0].command('START'); assert.equal(event.type, 'SNAPSHOT', JSON.stringify(event)); assert.equal(event.room.phase, 'playing'); await synchronize(clients, event.sequence);
 }
 function currentClient(clients) { const turn = clients[0].room.game.turn; return clients.find(client => client.room.selfPlayerId === turn); }
 function directMove(game) {

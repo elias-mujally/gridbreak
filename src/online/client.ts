@@ -47,6 +47,7 @@ export class OnlineConnection {
   private room: PublicRoomState | null;
   private reconnectTimer: number | null = null;
   private heartbeatTimer: number | null = null;
+  private pendingActionId: string | null = null;
   private attempts = 0;
   private stopped = false;
 
@@ -65,7 +66,7 @@ export class OnlineConnection {
     });
     socket.addEventListener('message', event => this.receive(String(event.data)));
     socket.addEventListener('close', event => {
-      this.stopHeartbeat(); this.callbacks.onPending(false);
+      this.stopHeartbeat(); this.pendingActionId = null; this.callbacks.onPending(false);
       if (this.stopped || event.code === 4001 || event.code === 4400 || event.code === 4404) {
         this.callbacks.onConnection('closed');
         if (event.code >= 4400) this.callbacks.onError(event.code === 4404 ? 'ROOM_NOT_FOUND' : 'UNAUTHENTICATED', event.reason || 'The room connection closed.');
@@ -88,10 +89,11 @@ export class OnlineConnection {
   sendRematch(accept = true) { return this.send('REMATCH_VOTE', { accept }); }
 
   private send(type: ClientCommand['type'], extra: Record<string, unknown> = {}): boolean {
+    if (this.pendingActionId) return false;
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) { this.callbacks.onError('NETWORK_ERROR', 'Waiting for the room connection.'); return false; }
     if (!this.room) { this.callbacks.onError('NETWORK_ERROR', 'Waiting for the authoritative room snapshot.'); return false; }
     const envelope = { type, protocolVersion: PROTOCOL_VERSION, buildVersion: GAME_BUILD_VERSION, roomCode: this.stored.roomCode, sessionId: this.stored.credentials.sessionId, actionId: crypto.randomUUID(), expectedSequence: this.room.sequence, ...extra };
-    this.socket.send(JSON.stringify(envelope)); this.callbacks.onPending(true); return true;
+    this.pendingActionId = envelope.actionId; this.socket.send(JSON.stringify(envelope)); this.callbacks.onPending(true); return true;
   }
 
   private receive(raw: string) {
@@ -103,10 +105,12 @@ export class OnlineConnection {
     }
     if (event.type === 'SNAPSHOT') {
       if (!this.room || event.sequence >= this.room.sequence) { this.room = event.room; this.callbacks.onSnapshot(event.room); }
-      this.callbacks.onPending(false); return;
+      if (event.actionId && event.actionId === this.pendingActionId) { this.pendingActionId = null; this.callbacks.onPending(false); }
+      return;
     }
     if (event.type === 'ACTION_REJECTED') {
-      this.callbacks.onPending(false); this.callbacks.onError(event.code, event.message);
+      if (!event.actionId || event.actionId === this.pendingActionId) { this.pendingActionId = null; this.callbacks.onPending(false); }
+      this.callbacks.onError(event.code, event.message);
       if (event.code === 'STALE_SEQUENCE') { this.socket?.close(4000, 'Resync'); }
     }
   }
