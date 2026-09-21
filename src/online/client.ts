@@ -20,9 +20,21 @@ export type OnlineCallbacks = {
 
 async function request<T>(path: string, body: unknown): Promise<T> {
   if (!ONLINE_SERVER_URL) throw new Error('Online server is not configured for this build.');
-  const response = await fetch(`${ONLINE_SERVER_URL}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const result = await response.json() as T & { error?: { code: OnlineErrorCode; message: string } };
-  if (!response.ok) throw Object.assign(new Error(result.error?.message ?? 'Online request failed.'), { code: result.error?.code ?? 'NETWORK_ERROR' });
+  let response: Response;
+  try {
+    response = await fetch(`${ONLINE_SERVER_URL}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  } catch (cause) {
+    throw Object.assign(new Error('Unable to reach GridBreak Online. Check your connection and try again.'), { code: 'NETWORK_ERROR', cause });
+  }
+  let result: T & { error?: { code: OnlineErrorCode; message: string } };
+  try { result = await response.json() as typeof result; }
+  catch (cause) { throw Object.assign(new Error('The online server returned an unreadable response.'), { code: 'INTERNAL_ERROR', cause }); }
+  if (!response.ok) {
+    const code = result.error?.code ?? 'INTERNAL_ERROR';
+    const message = response.status >= 500 ? 'GridBreak Online is temporarily unavailable. Try again shortly.'
+      : result.error?.message ?? 'The online server rejected that request.';
+    throw Object.assign(new Error(message), { code });
+  }
   return result;
 }
 
@@ -72,6 +84,7 @@ export class OnlineConnection {
         if (event.code >= 4400) this.callbacks.onError(event.code === 4404 ? 'ROOM_NOT_FOUND' : 'UNAUTHENTICATED', event.reason || 'The room connection closed.');
         return;
       }
+      if (event.code !== 4000) this.callbacks.onError('NETWORK_ERROR', 'Connection lost. Reconnecting…');
       this.scheduleReconnect();
     });
     socket.addEventListener('error', () => { if (!this.stopped) this.callbacks.onConnection('reconnecting'); });
